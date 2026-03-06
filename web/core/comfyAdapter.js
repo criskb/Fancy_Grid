@@ -64,7 +64,10 @@ export function extractNodes(app) {
 
 export function extractLinks(app) {
   const graph = getGraph(app);
-  const renderMode = getLinkRenderMode(app?.canvas);
+  const canvas = app?.canvas;
+  const renderMode = getLinkRenderMode(canvas);
+  const includeMarkers = Boolean(canvas?.ds?.scale >= 0.6 && canvas?.highquality_render !== false);
+  const includeDirectionalMarkers = includeMarkers && Boolean(canvas?.render_connection_arrows);
   const segments = [];
 
   for (const link of listCollection(graph?.links ?? graph?._links)) {
@@ -74,6 +77,8 @@ export function extractLinks(app) {
         renderMode,
         active: false,
         emphasis: 0.72,
+        includeMarkers,
+        includeDirectionalMarkers,
       }).map((segment) => ({
         ...segment,
         color,
@@ -88,6 +93,8 @@ export function extractLinks(app) {
         renderMode,
         active: false,
         emphasis: 0.92,
+        includeMarkers,
+        includeDirectionalMarkers,
       }).map((segment) => ({
         ...segment,
         color,

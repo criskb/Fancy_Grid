@@ -143,7 +143,7 @@ export class ReactiveGridField {
       points: framePoints,
       worldBounds,
       screenNodes: visibleNodes.map((node) => this._projectRect(node, viewport)),
-      visibleLinks: visibleLinks.map((link) => this._projectLink(link, viewport)),
+      visibleLinks: visibleLinks.filter((link) => !link.marker).map((link) => this._projectLink(link, viewport)),
       stats: {
         pointCount: framePoints.length,
         nodeCount: visibleNodes.length,
@@ -251,17 +251,24 @@ export class ReactiveGridField {
     const selected = [];
     const hardLimit = Math.max(maxLinks, 1);
     const softLimit = Math.max(hardLimit, Math.ceil(hardLimit * 1.6));
+    let selectedCost = 0;
 
     for (const group of Array.from(grouped.values()).sort((a, b) => a.distanceScore - b.distanceScore)) {
-      if (selected.length >= softLimit && group.segments.every((segment) => !segment.active)) {
+      if (selectedCost >= softLimit && group.segments.every((segment) => !segment.active)) {
         break;
       }
 
-      if (selected.length > 0 && selected.length + group.segments.length > softLimit) {
+      const groupCost = Math.max(
+        1,
+        group.segments.reduce((total, segment) => total + (segment.marker ? 0 : 1), 0)
+      );
+
+      if (selectedCost > 0 && selectedCost + groupCost > softLimit) {
         continue;
       }
 
       selected.push(...group.segments);
+      selectedCost += groupCost;
     }
 
     return selected;

@@ -352,7 +352,10 @@ export class ReactiveGridRenderer {
       context.beginPath();
       context.moveTo(link.x1, link.y1);
       context.bezierCurveTo(midpointX, link.y1, midpointX, link.y2, link.x2, link.y2);
-      context.strokeStyle = rgba(link.active ? settings.highlightColor : "224,229,238", link.active ? 0.92 : 0.28);
+      context.strokeStyle = rgba(
+        link.active ? settings.highlightColor : settings.linkIdleColor,
+        link.active ? 0.92 : 0.28
+      );
       context.lineWidth = link.active ? 2.3 : 1.4;
       context.stroke();
     }

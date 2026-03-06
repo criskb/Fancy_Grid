@@ -6,6 +6,7 @@ import {
 } from "./core/defaultSettings.js";
 import { ReactiveGridField } from "./core/fieldEngine.js";
 import { ReactiveGridRenderer } from "./core/gridRenderer.js";
+import { ensureThemeStylesheet, getThemeColors } from "./core/themeTokens.js";
 import {
   findFrameSnapPoint,
   findGridSnapPoint as resolveGridSnapPoint,
@@ -27,8 +28,6 @@ const EXTENSION_NAME = "FancyGrid.ReactiveBackground";
 const STICKY_REROUTE_STORAGE_KEY = "FancyGridStickyReroutes";
 const CUT_FADE_DURATION_MS = 220;
 const CUT_MIN_DISTANCE = 4;
-const CUT_COLOR = "255,72,72";
-const CUT_COLOR_TRAIL = "255,184,184";
 const SETTING_IDS = {
   enabled: "FancyGrid.Enabled",
   spacing: "FancyGrid.Spacing",
@@ -49,6 +48,7 @@ const SETTING_IDS = {
 class FancyGridController {
   constructor(appInstance) {
     this.app = appInstance;
+    this.themeColors = getThemeColors();
     this.settings = this.readSettings();
     this.field = new ReactiveGridField(this.settings);
     this.renderer = new ReactiveGridRenderer({ settings: this.settings });
@@ -69,9 +69,12 @@ class FancyGridController {
     this.cutGesture = null;
     this.cutFades = [];
     this.nativePreviewColorSnapshot = null;
+    this.draggedStickyReroutes = new Set();
   }
 
   async start() {
+    await ensureThemeStylesheet();
+    this.themeColors = getThemeColors();
     this.canvasElement = await waitForCanvas(this.app);
     this.installCanvasHooks();
     this.installPointerListeners();
@@ -80,6 +83,7 @@ class FancyGridController {
   }
 
   refreshSettings() {
+    this.themeColors = getThemeColors();
     this.settings = this.readSettings();
     this.field.setSettings(this.settings);
     this.renderer.setSettings(this.settings);
@@ -93,6 +97,7 @@ class FancyGridController {
       this.cutGesture = null;
       this.cutFades = [];
       this.restoreNativePreviewLinkColors();
+      this.draggedStickyReroutes.clear();
       this.syncRedrawLoop(false);
     }
 
@@ -100,6 +105,8 @@ class FancyGridController {
   }
 
   readSettings() {
+    const themeColors = this.themeColors ?? getThemeColors();
+
     return {
       ...DEFAULT_GRID_SETTINGS,
       enabled: getSettingValue(this.app, SETTING_IDS.enabled, DEFAULT_GRID_SETTINGS.enabled),
@@ -127,6 +134,14 @@ class FancyGridController {
       nodeGlow: getSettingValue(this.app, SETTING_IDS.nodeGlow, DEFAULT_GRID_SETTINGS.nodeGlow),
       dotAlpha: getSettingValue(this.app, SETTING_IDS.dotAlpha, DEFAULT_GRID_SETTINGS.dotAlpha),
       lineAlpha: getSettingValue(this.app, SETTING_IDS.lineAlpha, DEFAULT_GRID_SETTINGS.lineAlpha),
+      dotColor: themeColors.dotColor,
+      lineColor: themeColors.lineColor,
+      linkIdleColor: themeColors.linkIdleColor,
+      highlightColor: themeColors.highlightColor,
+      accentColor: themeColors.accentColor,
+      backgroundColorTop: themeColors.backgroundColorTop,
+      backgroundColorBottom: themeColors.backgroundColorBottom,
+      backgroundGlowColor: themeColors.backgroundGlowColor,
       performanceMode: getSettingValue(
         this.app,
         SETTING_IDS.performanceMode,
@@ -452,6 +467,15 @@ class FancyGridController {
     };
   }
 
+  clearStickyRerouteBinding(graph, rerouteId) {
+    const registry = this.getStickyRerouteRegistry(graph);
+    if (!registry || rerouteId == null) {
+      return;
+    }
+
+    delete registry[rerouteId];
+  }
+
   syncStickyReroutes(frame) {
     const graph = this.app?.canvas?.graph ?? this.app?.graph;
     const registry = this.getStickyRerouteRegistry(graph);
@@ -475,12 +499,24 @@ class FancyGridController {
       }
 
       if (reroute._dragging) {
+        this.draggedStickyReroutes.add(reroute.id);
+        continue;
+      }
+
+      let currentBinding = binding;
+
+      if (this.draggedStickyReroutes.delete(reroute.id)) {
+        this.rebindDraggedStickyReroute(graph, reroute, frame);
+        currentBinding = registry[rerouteId];
+      }
+
+      if (!currentBinding) {
         continue;
       }
 
       const target =
-        (binding?.key && framePointsByKey?.get(binding.key)) ??
-        this.resolveStickyRestPoint(binding);
+        (currentBinding.key && framePointsByKey?.get(currentBinding.key)) ??
+        this.resolveStickyRestPoint(currentBinding);
       if (!target || !reroute.pos) {
         continue;
       }
@@ -509,6 +545,29 @@ class FancyGridController {
       x: binding.col * this.settings.spacing,
       y: binding.row * this.settings.spacing,
     };
+  }
+
+  rebindDraggedStickyReroute(graph, reroute, frame) {
+    if (!graph || !reroute?.pos) {
+      return;
+    }
+
+    const snapPoint = this.findGridSnapPoint(
+      {
+        x: reroute.pos[0] ?? 0,
+        y: reroute.pos[1] ?? 0,
+      },
+      frame
+    );
+
+    if (!snapPoint) {
+      this.clearStickyRerouteBinding(graph, reroute.id);
+      return;
+    }
+
+    this.setStickyRerouteBinding(graph, reroute, snapPoint);
+    reroute.pos[0] = snapPoint.x;
+    reroute.pos[1] = snapPoint.y;
   }
 
   commitCutScene(pathPoints) {
@@ -677,8 +736,8 @@ class FancyGridController {
 
     const zoom = Math.max(viewport.zoom, 0.001);
     const now = performance.now();
-    const activeColor = CUT_COLOR;
-    const accentColor = CUT_COLOR_TRAIL;
+    const activeColor = this.themeColors.cutColor;
+    const accentColor = this.themeColors.cutColorTrail;
     const fades = [];
 
     ctx.save();
@@ -913,6 +972,7 @@ class FancyGridController {
   }
 
   drawSnapPreview(ctx, viewport, snapPoint) {
+    const { snapFillColor, snapCenterColor, snapRingColor } = this.themeColors;
     const outerRadius = Math.max(8 / Math.max(viewport.zoom, 0.001), this.settings.dotRadius * 3);
     const innerRadius = Math.max(3 / Math.max(viewport.zoom, 0.001), this.settings.dotRadius * 1.8);
 
@@ -920,17 +980,17 @@ class FancyGridController {
 
     ctx.beginPath();
     ctx.arc(snapPoint.x, snapPoint.y, outerRadius, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(56, 168, 255, 0.18)";
+    ctx.fillStyle = rgba(snapFillColor, 0.18);
     ctx.fill();
 
     ctx.beginPath();
     ctx.arc(snapPoint.x, snapPoint.y, innerRadius, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+    ctx.fillStyle = rgba(snapCenterColor, 0.9);
     ctx.fill();
 
     ctx.beginPath();
     ctx.arc(snapPoint.x, snapPoint.y, outerRadius * 0.72, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(56, 168, 255, 0.9)";
+    ctx.strokeStyle = rgba(snapRingColor, 0.9);
     ctx.lineWidth = Math.max(1 / Math.max(viewport.zoom, 0.001), 0.75);
     ctx.stroke();
 

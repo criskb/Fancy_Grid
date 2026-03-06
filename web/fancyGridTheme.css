@@ -1,0 +1,15 @@
+:root {
+  --fancy-grid-dot-color: 255,255,255;
+  --fancy-grid-line-color: 170,182,214;
+  --fancy-grid-link-idle-color: 224,229,238;
+  --fancy-grid-highlight-color: 56,168,255;
+  --fancy-grid-accent-color: 255,255,255;
+  --fancy-grid-background-top: #0f141b;
+  --fancy-grid-background-bottom: #090d12;
+  --fancy-grid-background-glow: 18,36,56;
+  --fancy-grid-cut-color: 255,72,72;
+  --fancy-grid-cut-color-trail: 255,184,184;
+  --fancy-grid-snap-fill-color: 56,168,255;
+  --fancy-grid-snap-center-color: 255,255,255;
+  --fancy-grid-snap-ring-color: 56,168,255;
+}

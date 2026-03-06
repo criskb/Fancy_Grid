@@ -17,6 +17,7 @@ const LINK_DIRECTION = Object.freeze({
 const LINEAR_OFFSET = 15;
 const STRAIGHT_OFFSET = 10;
 const MAX_SPLINE_OFFSET = 80;
+const SPLINE_OFFSET_FACTOR = 0.25;
 
 export { LINK_DIRECTION, LINK_RENDER_MODE };
 
@@ -33,6 +34,8 @@ export function buildLinkSegments(
     baseId = link?.id,
     active = false,
     emphasis = 1,
+    includeMarkers = false,
+    includeDirectionalMarkers = false,
     now = performance.now(),
   } = {}
 ) {
@@ -75,6 +78,23 @@ export function buildLinkSegments(
           active,
           emphasis,
         });
+
+        if (includeMarkers) {
+          segmentIndex = appendConnectionMarkers(segments, segmentIndex, {
+            baseId,
+            start: segmentStart,
+            end: segmentEnd,
+            renderMode,
+            startDirection:
+              startControl == null ? (start?.direction ?? LINK_DIRECTION.RIGHT) : LINK_DIRECTION.CENTER,
+            endDirection: LINK_DIRECTION.CENTER,
+            startControl,
+            endControl: toXY(reroute.controlPoint),
+            active,
+            emphasis,
+            includeDirectionalMarkers,
+          });
+        }
       }
 
       if (startControl == null && lastFloatingSlotType === "input") {
@@ -94,7 +114,7 @@ export function buildLinkSegments(
 
     const tailStart = toXY(reroutes.at(-1)?.pos) ?? (start ? { x: start.x, y: start.y } : null);
     if (tailStart && end) {
-      appendConnectionSegments(segments, segmentIndex, {
+      segmentIndex = appendConnectionSegments(segments, segmentIndex, {
         baseId,
         start: tailStart,
         end: { x: end.x, y: end.y },
@@ -105,6 +125,21 @@ export function buildLinkSegments(
         active,
         emphasis,
       });
+
+      if (includeMarkers) {
+        segmentIndex = appendConnectionMarkers(segments, segmentIndex, {
+          baseId,
+          start: tailStart,
+          end: { x: end.x, y: end.y },
+          renderMode,
+          startDirection: LINK_DIRECTION.CENTER,
+          endDirection: end.direction ?? LINK_DIRECTION.LEFT,
+          startControl,
+          active,
+          emphasis,
+          includeDirectionalMarkers,
+        });
+      }
     }
 
     return segments;
@@ -114,7 +149,7 @@ export function buildLinkSegments(
     return [];
   }
 
-  appendConnectionSegments(segments, segmentIndex, {
+  segmentIndex = appendConnectionSegments(segments, segmentIndex, {
     baseId,
     start: { x: start.x, y: start.y },
     end: { x: end.x, y: end.y },
@@ -124,6 +159,20 @@ export function buildLinkSegments(
     active,
     emphasis,
   });
+
+  if (includeMarkers) {
+    segmentIndex = appendConnectionMarkers(segments, segmentIndex, {
+      baseId,
+      start: { x: start.x, y: start.y },
+      end: { x: end.x, y: end.y },
+      renderMode,
+      startDirection: start.direction ?? LINK_DIRECTION.RIGHT,
+      endDirection: end.direction ?? LINK_DIRECTION.LEFT,
+      active,
+      emphasis,
+      includeDirectionalMarkers,
+    });
+  }
 
   return segments;
 }
@@ -144,7 +193,7 @@ function appendConnectionSegments(
     emphasis,
   }
 ) {
-  const polyline = buildPolyline({
+  const geometry = buildConnectionGeometry({
     start,
     end,
     renderMode,
@@ -153,6 +202,7 @@ function appendConnectionSegments(
     startControl,
     endControl,
   });
+  const polyline = geometry.polyline;
 
   for (let index = 1; index < polyline.length; index += 1) {
     const previous = polyline[index - 1];
@@ -178,7 +228,89 @@ function appendConnectionSegments(
   return segmentIndex;
 }
 
-function buildPolyline({
+function appendConnectionMarkers(
+  output,
+  segmentIndex,
+  {
+    baseId,
+    start,
+    end,
+    renderMode,
+    startDirection,
+    endDirection,
+    startControl,
+    endControl,
+    active,
+    emphasis,
+    includeDirectionalMarkers,
+  }
+) {
+  const centerMarker = computeNativeCenterMarkerPoint({
+    start,
+    end,
+    renderMode,
+    startDirection,
+    endDirection,
+    startControl,
+    endControl,
+  });
+
+  if (centerMarker) {
+    output.push({
+      id: `${baseId}:marker:${segmentIndex}`,
+      baseId,
+      x1: centerMarker.x,
+      y1: centerMarker.y,
+      x2: centerMarker.x,
+      y2: centerMarker.y,
+      active,
+      emphasis: emphasis * 1.2,
+      marker: true,
+    });
+    segmentIndex += 1;
+  }
+
+  if (includeDirectionalMarkers) {
+    for (const fraction of [0.25, 0.75]) {
+      const markerPoint = computeNativeConnectionPoint(start, end, fraction, startDirection, endDirection);
+      if (!markerPoint) {
+        continue;
+      }
+
+      output.push({
+        id: `${baseId}:marker:${segmentIndex}`,
+        baseId,
+        x1: markerPoint.x,
+        y1: markerPoint.y,
+        x2: markerPoint.x,
+        y2: markerPoint.y,
+        active,
+        emphasis: emphasis * 0.92,
+        marker: true,
+      });
+      segmentIndex += 1;
+    }
+  }
+
+  if (endDirection === LINK_DIRECTION.CENTER) {
+    output.push({
+      id: `${baseId}:marker:${segmentIndex}`,
+      baseId,
+      x1: end.x,
+      y1: end.y,
+      x2: end.x,
+      y2: end.y,
+      active,
+      emphasis: emphasis * 1.35,
+      marker: true,
+    });
+    segmentIndex += 1;
+  }
+
+  return segmentIndex;
+}
+
+function buildConnectionGeometry({
   start,
   end,
   renderMode,
@@ -191,7 +323,11 @@ function buildPolyline({
     const offset = LINEAR_OFFSET;
     const innerA = offsetPoint(start, startDirection, offset);
     const innerB = offsetPoint(end, endDirection, offset);
-    return [start, innerA, innerB, end];
+    const polyline = [start, innerA, innerB, end];
+    return {
+      polyline,
+      pointAt: (fraction) => pointAlongPolyline(polyline, fraction),
+    };
   }
 
   if (renderMode === LINK_RENDER_MODE.STRAIGHT_LINK) {
@@ -199,7 +335,7 @@ function buildPolyline({
     const innerA = offsetPoint(start, startDirection, offset);
     const innerB = offsetPoint(end, endDirection, offset);
     const midX = (innerA.x + innerB.x) * 0.5;
-    return [
+    const polyline = [
       start,
       innerA,
       { x: midX, y: innerA.y },
@@ -207,20 +343,85 @@ function buildPolyline({
       innerB,
       end,
     ];
+    return {
+      polyline,
+      pointAt: (fraction) => pointAlongPolyline(polyline, fraction),
+    };
   }
 
   if (renderMode !== LINK_RENDER_MODE.SPLINE_LINK) {
-    return [start, end];
+    const polyline = [start, end];
+    return {
+      polyline,
+      pointAt: (fraction) => pointAlongPolyline(polyline, fraction),
+    };
   }
 
   const dist = !startControl || !endControl ? distance(start, end) : 0;
   const innerA = startControl
     ? addPoints(start, startControl)
-    : offsetPoint(start, startDirection, Math.min(MAX_SPLINE_OFFSET, dist * 0.25));
+    : offsetPoint(start, startDirection, dist * SPLINE_OFFSET_FACTOR);
   const innerB = endControl
     ? addPoints(end, endControl)
-    : offsetPoint(end, endDirection, Math.min(MAX_SPLINE_OFFSET, dist * 0.25));
-  return sampleBezier(start, innerA, innerB, end);
+    : offsetPoint(end, endDirection, dist * SPLINE_OFFSET_FACTOR);
+  return {
+    polyline: sampleBezier(start, innerA, innerB, end),
+    pointAt: (fraction) => evaluateBezier(start, innerA, innerB, end, fraction),
+  };
+}
+
+function computeNativeCenterMarkerPoint({
+  start,
+  end,
+  renderMode,
+  startDirection,
+  endDirection,
+  startControl,
+  endControl,
+}) {
+  if (!start || !end) {
+    return null;
+  }
+
+  if (renderMode === LINK_RENDER_MODE.LINEAR_LINK) {
+    const innerA = offsetPoint(start, startDirection, LINEAR_OFFSET);
+    const innerB = offsetPoint(end, endDirection, LINEAR_OFFSET);
+    return midpoint(innerA, innerB);
+  }
+
+  if (renderMode === LINK_RENDER_MODE.STRAIGHT_LINK) {
+    const innerA = offsetPoint(start, startDirection, STRAIGHT_OFFSET);
+    const innerB = offsetPoint(end, endDirection, STRAIGHT_OFFSET);
+    return {
+      x: (innerA.x + innerB.x) * 0.5,
+      y: (innerA.y + innerB.y) * 0.5,
+    };
+  }
+
+  if (renderMode !== LINK_RENDER_MODE.SPLINE_LINK) {
+    return midpoint(start, end);
+  }
+
+  const dist = !startControl || !endControl ? distance(start, end) : 0;
+  const innerA = startControl
+    ? addPoints(start, startControl)
+    : offsetPoint(start, startDirection, dist * SPLINE_OFFSET_FACTOR);
+  const innerB = endControl
+    ? addPoints(end, endControl)
+    : offsetPoint(end, endDirection, dist * SPLINE_OFFSET_FACTOR);
+
+  return evaluateBezier(start, innerA, innerB, end, 0.5);
+}
+
+function computeNativeConnectionPoint(start, end, fraction, startDirection, endDirection) {
+  if (!start || !end) {
+    return null;
+  }
+
+  const dist = distance(start, end);
+  const innerA = offsetPoint(start, startDirection, dist * SPLINE_OFFSET_FACTOR);
+  const innerB = offsetPoint(end, endDirection, dist * SPLINE_OFFSET_FACTOR);
+  return evaluateBezier(start, innerA, innerB, end, fraction);
 }
 
 function sampleBezier(start, controlA, controlB, end) {
@@ -255,6 +456,52 @@ function evaluateBezier(start, controlA, controlB, end, t) {
       3 * inverse * tSquared * controlB.y +
       tSquared * t * end.y,
   };
+}
+
+function pointAlongPolyline(polyline, fraction) {
+  if (!Array.isArray(polyline) || polyline.length === 0) {
+    return null;
+  }
+
+  if (polyline.length === 1) {
+    return polyline[0];
+  }
+
+  const clampedFraction = Math.min(Math.max(fraction, 0), 1);
+  const totalLength = polylineLength(polyline);
+  if (totalLength <= 0.001) {
+    return polyline[0];
+  }
+
+  const targetDistance = totalLength * clampedFraction;
+  let traversed = 0;
+
+  for (let index = 1; index < polyline.length; index += 1) {
+    const previous = polyline[index - 1];
+    const current = polyline[index];
+    const segmentLength = distance(previous, current);
+    if (traversed + segmentLength < targetDistance) {
+      traversed += segmentLength;
+      continue;
+    }
+
+    const remaining = Math.max(targetDistance - traversed, 0);
+    const t = segmentLength > 0 ? remaining / segmentLength : 0;
+    return {
+      x: previous.x + (current.x - previous.x) * t,
+      y: previous.y + (current.y - previous.y) * t,
+    };
+  }
+
+  return polyline.at(-1) ?? polyline[0];
+}
+
+function polylineLength(polyline) {
+  let length = 0;
+  for (let index = 1; index < polyline.length; index += 1) {
+    length += distance(polyline[index - 1], polyline[index]);
+  }
+  return length;
 }
 
 function resolveLinkEndpoint(graph, link, isInput) {
@@ -377,6 +624,13 @@ function addPoints(point, offset) {
   return {
     x: point.x + offset.x,
     y: point.y + offset.y,
+  };
+}
+
+function midpoint(a, b) {
+  return {
+    x: (a.x + b.x) * 0.5,
+    y: (a.y + b.y) * 0.5,
   };
 }
 
