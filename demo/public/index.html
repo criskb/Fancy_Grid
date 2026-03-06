@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fancy Grid Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="demo-shell" data-stage>
+      <canvas class="demo-shell__grid" data-grid></canvas>
+      <div class="demo-shell__noise"></div>
+      <div class="demo-shell__nodes" data-nodes></div>
+
+      <aside class="demo-panel">
+        <div class="demo-panel__eyebrow">Reactive Grid Lab</div>
+        <h1>Fancy Grid</h1>
+        <p>
+          Tune the field engine here first, then carry the same settings into the ComfyUI background hook.
+        </p>
+        <div class="demo-panel__stats" data-stats></div>
+        <div class="demo-panel__controls" data-controls></div>
+        <div class="demo-panel__hint">
+          Drag cards. Drag from right ports to left ports. Scroll to zoom. Drag empty space to pan.
+        </div>
+      </aside>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

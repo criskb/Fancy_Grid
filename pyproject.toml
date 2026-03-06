@@ -1,0 +1,14 @@
+[project]
+name = "comfyui-fancy-grid"
+version = "0.1.0"
+description = "Reactive grid background styling extension and demo for ComfyUI."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Cris Bjorndal" },
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
