@@ -1,0 +1,79 @@
+<svg width="1200" height="280" viewBox="0 0 1200 280" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Fancy Grid</title>
+  <desc id="desc">Fancy Grid title banner with Fancy highlighted in green.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="280" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0F141B"/>
+      <stop offset="1" stop-color="#090D12"/>
+    </linearGradient>
+    <radialGradient id="glowGreen" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(230 76) rotate(24) scale(420 180)">
+      <stop stop-color="#7DFFA2" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#7DFFA2" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowBlue" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(930 162) rotate(-12) scale(340 180)">
+      <stop stop-color="#38A8FF" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#38A8FF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#7DFFA2" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#38A8FF" stop-opacity="0.05"/>
+    </linearGradient>
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="280" rx="28" fill="url(#bg)"/>
+  <rect x="1" y="1" width="1198" height="278" rx="27" stroke="rgba(255,255,255,0.08)"/>
+  <rect width="1200" height="280" rx="28" fill="url(#glowGreen)"/>
+  <rect width="1200" height="280" rx="28" fill="url(#glowBlue)"/>
+
+  <g opacity="0.5">
+    <path d="M734 38H1162" stroke="url(#line)" stroke-width="1"/>
+    <path d="M734 78H1162" stroke="url(#line)" stroke-width="1"/>
+    <path d="M734 118H1162" stroke="url(#line)" stroke-width="1"/>
+    <path d="M734 158H1162" stroke="url(#line)" stroke-width="1"/>
+    <path d="M734 198H1162" stroke="url(#line)" stroke-width="1"/>
+    <path d="M734 238H1162" stroke="url(#line)" stroke-width="1"/>
+    <path d="M774 18V258" stroke="url(#line)" stroke-width="1"/>
+    <path d="M834 18V258" stroke="url(#line)" stroke-width="1"/>
+    <path d="M894 18V258" stroke="url(#line)" stroke-width="1"/>
+    <path d="M954 18V258" stroke="url(#line)" stroke-width="1"/>
+    <path d="M1014 18V258" stroke="url(#line)" stroke-width="1"/>
+    <path d="M1074 18V258" stroke="url(#line)" stroke-width="1"/>
+    <path d="M1134 18V258" stroke="url(#line)" stroke-width="1"/>
+  </g>
+
+  <g opacity="0.9">
+    <path d="M774 78C814 110 858 116 894 118C930 120 968 110 1014 78" stroke="#38A8FF" stroke-opacity="0.55" stroke-width="2.2"/>
+    <path d="M834 118C868 152 920 162 954 158C990 154 1042 126 1074 78" stroke="#7DFFA2" stroke-opacity="0.62" stroke-width="2.2"/>
+    <path d="M834 198C876 182 916 176 954 178C992 180 1036 192 1074 218" stroke="#E0E5EE" stroke-opacity="0.4" stroke-width="1.8"/>
+  </g>
+
+  <g filter="url(#softGlow)" opacity="0.9">
+    <circle cx="834" cy="118" r="10" fill="#7DFFA2"/>
+    <circle cx="954" cy="158" r="9" fill="#38A8FF"/>
+    <circle cx="1014" cy="78" r="8" fill="#E0E5EE"/>
+  </g>
+
+  <g>
+    <circle cx="834" cy="118" r="3.4" fill="#FFFFFF"/>
+    <circle cx="954" cy="158" r="3.2" fill="#FFFFFF"/>
+    <circle cx="1014" cy="78" r="2.8" fill="#FFFFFF"/>
+    <circle cx="894" cy="118" r="2.6" fill="#7DFFA2"/>
+    <circle cx="1074" cy="78" r="2.6" fill="#7DFFA2"/>
+    <circle cx="954" cy="178" r="2.6" fill="#38A8FF"/>
+    <circle cx="1074" cy="218" r="2.6" fill="#E0E5EE"/>
+  </g>
+
+  <text x="84" y="108" fill="#E0E5EE" fill-opacity="0.78" font-size="18" font-weight="600" font-family="Segoe UI, Helvetica, Arial, sans-serif" letter-spacing="0.26em">
+    COMFYUI EXTENSION
+  </text>
+  <text x="84" y="202" font-size="96" font-weight="800" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+    <tspan fill="#7DFFA2">Fancy</tspan>
+    <tspan dx="16" fill="#F5FAFF">Grid</tspan>
+  </text>
+  <text x="88" y="240" fill="#B8C4D8" font-size="22" font-weight="500" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+    Reactive background field, dynamic grid styles, and sticky reroute snapping for ComfyUI.
+  </text>
+</svg>

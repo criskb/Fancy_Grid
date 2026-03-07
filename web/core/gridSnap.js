@@ -1,27 +1,26 @@
+import { findNearestStyledGridPoint } from "./gridStyles.js";
+
 const DEFAULT_SNAP_RADIUS_PX = 14;
 
-export function findNearestGridPoint(point, spacing) {
-  if (!point || !Number.isFinite(spacing) || spacing <= 0) {
-    return null;
+function normalizeGridSnapOptions(spacingOrOptions) {
+  if (typeof spacingOrOptions === "number") {
+    return { spacing: spacingOrOptions };
   }
 
-  const col = Math.round(point.x / spacing);
-  const row = Math.round(point.y / spacing);
+  return spacingOrOptions ?? {};
+}
 
-  return {
-    key: `${col}:${row}`,
-    col,
-    row,
-    x: col * spacing,
-    y: row * spacing,
-  };
+export function findNearestGridPoint(point, spacingOrOptions) {
+  return findNearestStyledGridPoint(point, normalizeGridSnapOptions(spacingOrOptions));
 }
 
 export function findGridSnapPoint(
   point,
-  { spacing, zoom = 1, snapRadiusPx = DEFAULT_SNAP_RADIUS_PX } = {}
+  spacingOrOptions = {}
 ) {
-  const snapped = findNearestGridPoint(point, spacing);
+  const { spacing, zoom = 1, snapRadiusPx = DEFAULT_SNAP_RADIUS_PX } =
+    normalizeGridSnapOptions(spacingOrOptions);
+  const snapped = findNearestGridPoint(point, spacingOrOptions);
   if (!snapped) {
     return null;
   }

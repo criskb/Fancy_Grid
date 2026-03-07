@@ -2,6 +2,7 @@ import { THEME_COLOR_FALLBACKS } from "./themeTokens.js";
 
 export const DEFAULT_GRID_SETTINGS = Object.freeze({
   enabled: true,
+  gridStyle: "default",
   spacing: 30,
   radius: 220,
   strength: 0.2,
@@ -23,6 +24,7 @@ export const DEFAULT_GRID_SETTINGS = Object.freeze({
   linkRadius: 148,
   linkGlow: 1,
   nodeGlow: 1,
+  colorGlow: false,
   pointerRadius: 120,
   pointerStrength: 0.12,
   highlightColor: THEME_COLOR_FALLBACKS.highlightColor,
@@ -66,6 +68,8 @@ export const NODE_VISUAL_FALLOFF_OPTIONS = Object.freeze([
   Object.freeze({ text: "Soft", value: "soft" }),
   Object.freeze({ text: "Edge Fade", value: "edge" }),
 ]);
+
+export { GRID_STYLE_OPTIONS } from "./gridStyles.js";
 
 export function getPerformanceProfile(mode) {
   return PERFORMANCE_PROFILES[mode] ?? PERFORMANCE_PROFILES.balanced;

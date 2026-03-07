@@ -36,6 +36,7 @@ export function buildLinkSegments(
     emphasis = 1,
     includeMarkers = false,
     includeDirectionalMarkers = false,
+    screenScale = 1,
     now = performance.now(),
   } = {}
 ) {
@@ -77,6 +78,7 @@ export function buildLinkSegments(
           endControl: toXY(reroute.controlPoint),
           active,
           emphasis,
+          screenScale,
         });
 
         if (includeMarkers) {
@@ -124,6 +126,7 @@ export function buildLinkSegments(
         startControl,
         active,
         emphasis,
+        screenScale,
       });
 
       if (includeMarkers) {
@@ -158,6 +161,7 @@ export function buildLinkSegments(
     endDirection: end.direction ?? LINK_DIRECTION.LEFT,
     active,
     emphasis,
+    screenScale,
   });
 
   if (includeMarkers) {
@@ -191,6 +195,7 @@ function appendConnectionSegments(
     endControl,
     active,
     emphasis,
+    screenScale,
   }
 ) {
   const geometry = buildConnectionGeometry({
@@ -201,6 +206,7 @@ function appendConnectionSegments(
     endDirection,
     startControl,
     endControl,
+    screenScale,
   });
   const polyline = geometry.polyline;
 
@@ -318,6 +324,7 @@ function buildConnectionGeometry({
   endDirection,
   startControl,
   endControl,
+  screenScale,
 }) {
   if (renderMode === LINK_RENDER_MODE.LINEAR_LINK) {
     const offset = LINEAR_OFFSET;
@@ -365,7 +372,7 @@ function buildConnectionGeometry({
     ? addPoints(end, endControl)
     : offsetPoint(end, endDirection, dist * SPLINE_OFFSET_FACTOR);
   return {
-    polyline: sampleBezier(start, innerA, innerB, end),
+    polyline: sampleBezier(start, innerA, innerB, end, screenScale),
     pointAt: (fraction) => evaluateBezier(start, innerA, innerB, end, fraction),
   };
 }
@@ -424,10 +431,12 @@ function computeNativeConnectionPoint(start, end, fraction, startDirection, endD
   return evaluateBezier(start, innerA, innerB, end, fraction);
 }
 
-function sampleBezier(start, controlA, controlB, end) {
+function sampleBezier(start, controlA, controlB, end, screenScale = 1) {
   const approxLength =
     distance(start, controlA) + distance(controlA, controlB) + distance(controlB, end);
-  const segmentCount = clampInt(Math.ceil(approxLength / 42), 8, 22);
+  const effectiveScale = Math.min(Math.max(screenScale, 0.2), 2.5);
+  const screenLength = approxLength * effectiveScale;
+  const segmentCount = clampInt(Math.ceil(screenLength / 42), 4, 22);
   const polyline = [start];
 
   for (let index = 1; index < segmentCount; index += 1) {

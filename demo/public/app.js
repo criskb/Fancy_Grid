@@ -1,6 +1,7 @@
 import { DEFAULT_GRID_SETTINGS, mergeSettings } from "/core/defaultSettings.js";
 import { ReactiveGridField } from "/core/fieldEngine.js";
 import { ReactiveGridRenderer } from "/core/gridRenderer.js";
+import { GRID_STYLE_OPTIONS } from "/core/gridStyles.js";
 
 const stage = document.querySelector("[data-stage]");
 const gridCanvas = document.querySelector("[data-grid]");
@@ -98,6 +99,32 @@ const CONTROL_DEFS = [
   { key: "dotAlpha", label: "Dot Alpha", min: 0.2, max: 1, step: 0.01 },
   { key: "lineAlpha", label: "Line Alpha", min: 0.02, max: 0.18, step: 0.002 },
 ];
+const SELECT_CONTROL_DEFS = [
+  {
+    key: "gridStyle",
+    label: "Grid Style",
+    options: GRID_STYLE_OPTIONS,
+  },
+  {
+    key: "colorGlow",
+    label: "Color Glow",
+    options: [
+      { text: "Off", value: false },
+      { text: "On", value: true },
+    ],
+  },
+  {
+    key: "performanceMode",
+    label: "Performance",
+    options: [
+      { text: "Eco", value: "eco" },
+      { text: "Balanced", value: "balanced" },
+      { text: "Quality", value: "quality" },
+    ],
+  },
+];
+const SELECT_CONTROL_KEYS = new Set(SELECT_CONTROL_DEFS.map((def) => def.key));
+const SELECT_CONTROL_MAP = new Map(SELECT_CONTROL_DEFS.map((def) => [def.key, def]));
 
 bootstrap();
 
@@ -133,29 +160,29 @@ function buildControls() {
     controlsRoot.appendChild(wrapper);
   }
 
-  const performance = document.createElement("div");
-  performance.className = "demo-control";
-  performance.innerHTML = `
-    <div class="demo-control__row">
-      <label for="control-performanceMode">Performance</label>
-      <output data-output="performanceMode">${state.settings.performanceMode}</output>
-    </div>
-    <select id="control-performanceMode" data-control="performanceMode">
-      <option value="eco">eco</option>
-      <option value="balanced">balanced</option>
-      <option value="quality">quality</option>
-    </select>
-  `;
-  performance.querySelector("select").value = state.settings.performanceMode;
-  controlsRoot.appendChild(performance);
+  for (const def of SELECT_CONTROL_DEFS) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "demo-control";
+    wrapper.innerHTML = `
+      <div class="demo-control__row">
+        <label for="control-${def.key}">${def.label}</label>
+        <output data-output="${def.key}">${formatControlValue(def.key, state.settings[def.key])}</output>
+      </div>
+      <select id="control-${def.key}" data-control="${def.key}">
+        ${def.options.map((option) => `<option value="${String(option.value)}">${option.text}</option>`).join("")}
+      </select>
+    `;
+    wrapper.querySelector("select").value = String(state.settings[def.key]);
+    controlsRoot.appendChild(wrapper);
+  }
 
   controlsRoot.addEventListener("input", (event) => {
     const key = event.target.dataset.control;
-    if (!key) {
+    if (!key || SELECT_CONTROL_KEYS.has(key)) {
       return;
     }
 
-    const value = key === "performanceMode" ? event.target.value : Number(event.target.value);
+    const value = Number(event.target.value);
     state.settings[key] = value;
     field.setSettings(state.settings);
     renderer.setSettings(state.settings);
@@ -163,14 +190,21 @@ function buildControls() {
   });
 
   controlsRoot.addEventListener("change", (event) => {
-    if (event.target.dataset.control !== "performanceMode") {
+    const key = event.target.dataset.control;
+    if (!SELECT_CONTROL_KEYS.has(key)) {
       return;
     }
 
-    state.settings.performanceMode = event.target.value;
+    const def = SELECT_CONTROL_MAP.get(key);
+    const value =
+      def?.options.find((option) => String(option.value) === event.target.value)?.value ?? event.target.value;
+    state.settings[key] = value;
     field.setSettings(state.settings);
     renderer.setSettings(state.settings);
-    controlsRoot.querySelector('[data-output="performanceMode"]').textContent = event.target.value;
+    controlsRoot.querySelector(`[data-output="${key}"]`).textContent = formatControlValue(
+      key,
+      value
+    );
   });
 }
 
@@ -419,13 +453,29 @@ function getConnectionSegments() {
 function updateStats() {
   statsRoot.querySelector('[data-stat="points"]').textContent = String(state.frameStats.pointCount);
   statsRoot.querySelector('[data-stat="zoom"]').textContent = `${state.viewport.zoom.toFixed(2)}x`;
-  statsRoot.querySelector('[data-stat="links"]').textContent = String(state.frameStats.linkCount + (state.activeCable ? 1 : 0));
+  statsRoot.querySelector('[data-stat="links"]').textContent = String(
+    state.frameStats.linkCount + (state.activeCable ? 1 : 0)
+  );
   statsRoot.querySelector('[data-stat="fps"]').textContent = String(state.fps);
 }
 
 function syncViewport() {
   state.viewport.width = window.innerWidth;
   state.viewport.height = window.innerHeight;
+}
+
+function formatControlValue(key, value) {
+  if (SELECT_CONTROL_KEYS.has(key)) {
+    return SELECT_CONTROL_MAP.get(key)?.options.find(
+      (option) => String(option.value) === String(value)
+    )?.text ?? String(value);
+  }
+
+  if (key === "spacing" || key === "radius") {
+    return String(Math.round(value));
+  }
+
+  return Number(value).toFixed(2);
 }
 
 function syncNodeTransforms() {
@@ -494,16 +544,4 @@ function screenToWorld(x, y) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
-}
-
-function formatControlValue(key, value) {
-  if (key === "performanceMode") {
-    return String(value);
-  }
-
-  if (key === "spacing" || key === "radius") {
-    return String(Math.round(value));
-  }
-
-  return Number(value).toFixed(2);
 }

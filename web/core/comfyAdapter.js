@@ -66,6 +66,7 @@ export function extractLinks(app) {
   const graph = getGraph(app);
   const canvas = app?.canvas;
   const renderMode = getLinkRenderMode(canvas);
+  const screenScale = Math.max(canvas?.ds?.scale ?? 1, 0.2);
   const includeMarkers = Boolean(canvas?.ds?.scale >= 0.6 && canvas?.highquality_render !== false);
   const includeDirectionalMarkers = includeMarkers && Boolean(canvas?.render_connection_arrows);
   const segments = [];
@@ -79,6 +80,7 @@ export function extractLinks(app) {
         emphasis: 0.72,
         includeMarkers,
         includeDirectionalMarkers,
+        screenScale,
       }).map((segment) => ({
         ...segment,
         color,
@@ -95,6 +97,7 @@ export function extractLinks(app) {
         emphasis: 0.92,
         includeMarkers,
         includeDirectionalMarkers,
+        screenScale,
       }).map((segment) => ({
         ...segment,
         color,

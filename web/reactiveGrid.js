@@ -1,11 +1,13 @@
 import { app } from "../../scripts/app.js";
 import {
   DEFAULT_GRID_SETTINGS,
+  GRID_STYLE_OPTIONS,
   NODE_VISUAL_FALLOFF_OPTIONS,
   getPerformanceProfile,
 } from "./core/defaultSettings.js";
 import { ReactiveGridField } from "./core/fieldEngine.js";
 import { ReactiveGridRenderer } from "./core/gridRenderer.js";
+import { resolveGridRestPoint } from "./core/gridStyles.js";
 import { ensureThemeStylesheet, getThemeColors } from "./core/themeTokens.js";
 import {
   findFrameSnapPoint,
@@ -30,6 +32,7 @@ const CUT_FADE_DURATION_MS = 220;
 const CUT_MIN_DISTANCE = 4;
 const SETTING_IDS = {
   enabled: "FancyGrid.Enabled",
+  gridStyle: "FancyGrid.GridStyle",
   spacing: "FancyGrid.Spacing",
   radius: "FancyGrid.Radius",
   strength: "FancyGrid.Strength",
@@ -40,6 +43,7 @@ const SETTING_IDS = {
   gridVisibility: "FancyGrid.GridVisibility",
   linkGlow: "FancyGrid.LinkGlow",
   nodeGlow: "FancyGrid.NodeGlow",
+  colorGlow: "FancyGrid.ColorGlow",
   dotAlpha: "FancyGrid.DotAlpha",
   lineAlpha: "FancyGrid.LineAlpha",
   performanceMode: "FancyGrid.PerformanceMode",
@@ -110,6 +114,7 @@ class FancyGridController {
     return {
       ...DEFAULT_GRID_SETTINGS,
       enabled: getSettingValue(this.app, SETTING_IDS.enabled, DEFAULT_GRID_SETTINGS.enabled),
+      gridStyle: getSettingValue(this.app, SETTING_IDS.gridStyle, DEFAULT_GRID_SETTINGS.gridStyle),
       spacing: getSettingValue(this.app, SETTING_IDS.spacing, DEFAULT_GRID_SETTINGS.spacing),
       radius: getSettingValue(this.app, SETTING_IDS.radius, DEFAULT_GRID_SETTINGS.radius),
       strength: getSettingValue(this.app, SETTING_IDS.strength, DEFAULT_GRID_SETTINGS.strength),
@@ -132,6 +137,7 @@ class FancyGridController {
       ),
       linkGlow: getSettingValue(this.app, SETTING_IDS.linkGlow, DEFAULT_GRID_SETTINGS.linkGlow),
       nodeGlow: getSettingValue(this.app, SETTING_IDS.nodeGlow, DEFAULT_GRID_SETTINGS.nodeGlow),
+      colorGlow: getSettingValue(this.app, SETTING_IDS.colorGlow, DEFAULT_GRID_SETTINGS.colorGlow),
       dotAlpha: getSettingValue(this.app, SETTING_IDS.dotAlpha, DEFAULT_GRID_SETTINGS.dotAlpha),
       lineAlpha: getSettingValue(this.app, SETTING_IDS.lineAlpha, DEFAULT_GRID_SETTINGS.lineAlpha),
       dotColor: themeColors.dotColor,
@@ -207,6 +213,7 @@ class FancyGridController {
     this.canvasElement.addEventListener("pointerdown", this.handlePointerDownCapture, true);
     this.canvasElement.addEventListener("pointermove", this.handlePointerMove);
     this.canvasElement.addEventListener("pointerleave", this.handlePointerLeave);
+    this.canvasElement.addEventListener("contextmenu", this.handleContextMenuCapture, true);
     this.pointerListenersInstalled = true;
   }
 
@@ -216,11 +223,6 @@ class FancyGridController {
       return;
     }
 
-    // Capture-phase interception prevents Comfy's empty-canvas drop menu when the
-    // user is intentionally dropping a cable onto one of Fancy Grid's snap points.
-    connector.events.addEventListener("dropped-on-canvas", this.handleCableDroppedOnCanvas, {
-      capture: true,
-    });
     connector.events.addEventListener("dropped-on-node", this.handleCableDroppedOnNode, {
       capture: true,
     });
@@ -362,6 +364,25 @@ class FancyGridController {
     this.requestRedraw();
   };
 
+  handleContextMenuCapture = (event) => {
+    if (!this.settings.enabled) {
+      return;
+    }
+
+    const point = this.eventToWorldPoint(event);
+    if (!point) {
+      return;
+    }
+
+    const created = this.tryCreateStickyRerouteAtPoint(point);
+    if (!created) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
   handleCableDroppedOnNode = (customEvent) => {
     const connector = getLinkConnector(this.app);
     const targetNode = customEvent?.detail?.node;
@@ -379,15 +400,10 @@ class FancyGridController {
     customEvent.stopImmediatePropagation();
   };
 
-  handleCableDroppedOnCanvas = (customEvent) => {
-    if (!this.settings.enabled) {
-      return;
-    }
-
+  tryCreateStickyRerouteAtPoint(point) {
     const connector = getLinkConnector(this.app);
     const graph = this.app?.canvas?.graph ?? this.app?.graph;
     const renderLink = connector?.renderLinks?.[0];
-    const point = toWorldPoint(customEvent?.detail);
     const snapPoint = this.findGridSnapPoint(point);
 
     if (
@@ -397,14 +413,11 @@ class FancyGridController {
       connector.renderLinks.length !== 1 ||
       !graph ||
       !renderLink?.node?.connectFloatingReroute ||
-      !renderLink.fromSlot ||
+      renderLink.fromSlot == null ||
       !snapPoint
     ) {
-      return;
+      return false;
     }
-
-    customEvent.preventDefault();
-    customEvent.stopImmediatePropagation();
 
     this.app.canvas?.emitBeforeChange?.();
     graph.beforeChange?.();
@@ -418,6 +431,7 @@ class FancyGridController {
 
       if (reroute) {
         this.setStickyRerouteBinding(graph, reroute, snapPoint);
+        return true;
       }
     } catch (error) {
       console.error("Fancy Grid: failed to create reroute on cable drop.", error);
@@ -428,7 +442,9 @@ class FancyGridController {
       this.snapPreview = null;
       this.requestRedraw();
     }
-  };
+
+    return false;
+  }
 
   getStickyRerouteRegistry(graph, create = false) {
     if (!graph) {
@@ -538,13 +554,13 @@ class FancyGridController {
       return null;
     }
 
-    return {
-      key: binding.key ?? `${binding.col}:${binding.row}`,
+    return resolveGridRestPoint({
       col: binding.col,
       row: binding.row,
-      x: binding.col * this.settings.spacing,
-      y: binding.row * this.settings.spacing,
-    };
+      spacing: this.settings.spacing,
+      gridStyle: this.settings.gridStyle,
+      time: this.field.getTime(),
+    });
   }
 
   rebindDraggedStickyReroute(graph, reroute, frame) {
@@ -930,6 +946,8 @@ class FancyGridController {
 
     return resolveGridSnapPoint(point, {
       spacing: this.settings.spacing,
+      gridStyle: this.settings.gridStyle,
+      time: this.field.getTime(),
       zoom: viewport.zoom,
     });
   }
@@ -1117,26 +1135,6 @@ function traceCutPath(ctx, path) {
   }
 }
 
-function toWorldPoint(value) {
-  if (!value) {
-    return null;
-  }
-
-  if (typeof value.canvasX === "number" && typeof value.canvasY === "number") {
-    return { x: value.canvasX, y: value.canvasY };
-  }
-
-  if (Array.isArray(value)) {
-    return { x: value[0], y: value[1] };
-  }
-
-  if (typeof value.x === "number" && typeof value.y === "number") {
-    return { x: value.x, y: value.y };
-  }
-
-  return null;
-}
-
 const runtime = {
   controller: null,
 };
@@ -1150,6 +1148,15 @@ app.registerExtension({
       type: "boolean",
       defaultValue: DEFAULT_GRID_SETTINGS.enabled,
       category: ["Fancy Grid", "General", "Enable"],
+      onChange: () => runtime.controller?.refreshSettings(),
+    },
+    {
+      id: SETTING_IDS.gridStyle,
+      name: "Grid Style",
+      type: "combo",
+      defaultValue: DEFAULT_GRID_SETTINGS.gridStyle,
+      options: GRID_STYLE_OPTIONS,
+      category: ["Fancy Grid", "General", "Grid Style"],
       onChange: () => runtime.controller?.refreshSettings(),
     },
     {
@@ -1240,6 +1247,15 @@ app.registerExtension({
       attrs: { min: 0, max: 2, step: 0.05 },
       defaultValue: DEFAULT_GRID_SETTINGS.nodeGlow,
       category: ["Fancy Grid", "Look", "Node Glow"],
+      onChange: () => runtime.controller?.refreshSettings(),
+    },
+    {
+      id: SETTING_IDS.colorGlow,
+      name: "Color glow",
+      type: "boolean",
+      defaultValue: DEFAULT_GRID_SETTINGS.colorGlow,
+      category: ["Fancy Grid", "Look", "Color Glow"],
+      tooltip: "Adds a soft colored aura around highlights and active cable previews.",
       onChange: () => runtime.controller?.refreshSettings(),
     },
     {

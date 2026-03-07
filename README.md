@@ -1,43 +1,108 @@
-# Fancy Grid
+<p align="center">
+  <img src="./assets/fancy-grid-title.svg" alt="Fancy Grid" width="100%" />
+</p>
 
-Fancy Grid is a frontend-first ComfyUI extension that renders a reactive dot mesh as the editor background, plus a standalone Node.js demo for tuning the field engine outside ComfyUI.
+<p align="center">
+  <strong>Fancy Grid</strong> is a frontend-first ComfyUI extension that turns the canvas background into a reactive field of dots, lines, motion, and snap-aware interactions.
+</p>
 
-## What is included
+<p align="center">
+  It ships as a frontend-only custom node package and includes a standalone demo for tuning the shared renderer outside ComfyUI.
+</p>
 
-- `web/reactiveGrid.js`
-  Registers the ComfyUI extension with `app.registerExtension(...)`, hooks the LiteGraph background draw, disables the stock grid image, and exposes settings.
-- `web/core/`
-  Shared field engine, geometry helpers, renderer, and ComfyUI adapter utilities.
-- `demo/`
-  Lightweight Node.js tuning lab that serves the same shared core and gives you draggable cards, cable previews, pan/zoom, and slider controls.
+## Overview
 
-## ComfyUI install
+Fancy Grid replaces the static editor background with a living grid that reacts to:
 
-This repo already follows the normal custom-node package layout:
+- node cards
+- graph links
+- active cable drags
+- pointer movement
+- viewport motion
 
-- `__init__.py` exposes `WEB_DIRECTORY = "./web"`
-- `nodes.py` stays empty because this package is frontend-only
+The result is a cleaner canvas with more spatial feedback, without adding backend nodes or changing your workflow graph format.
 
-Restart ComfyUI after the package is present in `custom_nodes`. The extension settings show up under `Fancy Grid`.
+## Highlights
 
-## Demo usage
+- Frontend-only ComfyUI extension with `WEB_DIRECTORY = "./web"`
+- Reactive dot-and-line background rendered behind nodes
+- Multiple dynamic grid styles with a `Grid Style` setting
+- Sticky reroute snapping to grid points
+- Shift-drag cut gesture for slicing links and nodes
+- Standalone demo app for tuning the field engine in isolation
 
-From this package root:
+## Grid Styles
+
+Current styles:
+
+- `Default`
+- `Wave Matrix (Beta)`
+- `Prism Flow (Beta)`
+- `Orbit Weave (Beta)`
+- `Shear Drift (Beta)`
+- `Helix Ribbon (Beta)`
+
+You can switch styles from:
+
+- `Settings > Fancy Grid > General > Grid Style`
+
+## Interaction Notes
+
+- Normal cable drops on empty canvas now preserve ComfyUI's quick-add node menu.
+- Sticky reroutes are created only when you right-click while dragging a cable near a valid grid snap point.
+- Shift + left drag starts the cut gesture.
+- Existing graph links and live cable previews deform the field, but Fancy Grid does not replace ComfyUI's native cable rendering.
+
+## Install
+
+Place this repo inside your ComfyUI `custom_nodes` folder:
+
+```text
+ComfyUI/custom_nodes/Fancy_Grid
+```
+
+Then restart ComfyUI.
+
+This package is intentionally frontend-only:
+
+- [`__init__.py`](./__init__.py) exposes `WEB_DIRECTORY = "./web"`
+- [`nodes.py`](./nodes.py) contains no backend nodes
+
+After restart, the extension settings appear under `Fancy Grid`.
+
+## Demo
+
+The repo includes a small local demo that uses the same shared core modules as the ComfyUI extension.
+
+From the project root:
 
 ```bash
 cd demo
+npm install
 npm run dev
 ```
 
 Open the printed local URL, then:
 
 - drag cards to deform the field
-- drag from a right-side port to a left-side port to preview cable tension
+- drag from an output port to an input port to preview cable influence
 - scroll to zoom
-- drag empty canvas space to pan
+- drag empty space to pan
+- switch grid styles live from the demo controls
+
+## Project Layout
+
+- `web/reactiveGrid.js`
+  ComfyUI extension entrypoint, settings registration, canvas hooks, snapping, and interaction wiring.
+- `web/core/`
+  Shared renderer, field engine, geometry helpers, theme tokens, snap logic, and ComfyUI adapters.
+- `demo/`
+  Lightweight development surface for experimenting with the same background engine outside ComfyUI.
+- `assets/`
+  README presentation assets.
 
 ## Notes
 
-- The current Comfy integration renders in LiteGraph’s background draw hook so the field sits behind nodes.
-- Existing graph links bend the field, but the extension does not redraw Comfy’s native cable lines.
-- Active cable preview detection in ComfyUI uses the canvas connection state when available and falls back conservatively.
+- Fancy Grid is designed to sit in the LiteGraph background draw path so it stays behind nodes.
+- The package name is `comfyui-fancy-grid`.
+- Python requirement in [`pyproject.toml`](./pyproject.toml) is `>=3.10`.

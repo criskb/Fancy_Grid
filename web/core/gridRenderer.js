@@ -1,4 +1,5 @@
 import { DEFAULT_GRID_SETTINGS, mergeSettings } from "./defaultSettings.js";
+import { getGridStyleDefinition } from "./gridStyles.js";
 import { rgba, roundedRectPath } from "./geometry.js";
 
 export class ReactiveGridRenderer {
@@ -89,6 +90,7 @@ export class ReactiveGridRenderer {
   }
 
   _drawScreenBackground(context, width, height, settings) {
+    const style = this._getStyle(settings);
     const background = context.createLinearGradient(0, 0, width, height);
     background.addColorStop(0, rgba(settings.backgroundColorTop, settings.backgroundAlpha));
     background.addColorStop(1, rgba(settings.backgroundColorBottom, settings.backgroundAlpha));
@@ -103,7 +105,10 @@ export class ReactiveGridRenderer {
       height * 0.34,
       Math.max(width, height) * 0.72
     );
-    glow.addColorStop(0, rgba(settings.backgroundGlowColor, settings.backgroundAlpha * 0.6));
+    glow.addColorStop(
+      0,
+      rgba(settings.backgroundGlowColor, settings.backgroundAlpha * 0.6 * this._getBackgroundGlowScale(style))
+    );
     glow.addColorStop(1, rgba(settings.backgroundGlowColor, 0));
     context.fillStyle = glow;
     context.fillRect(0, 0, width, height);
@@ -120,6 +125,9 @@ export class ReactiveGridRenderer {
   }
 
   _drawBaseLines(context, frame, settings, coordinateSpace) {
+    const style = this._getStyle(settings);
+    const lineAlpha = this._getLineAlpha(settings, style);
+    const lineWidth = this._getLineWidth(settings, style);
     const { cols, rows, points } = frame;
 
     if ((settings.gridVisibility ?? 1) >= 0.999) {
@@ -147,13 +155,13 @@ export class ReactiveGridRenderer {
         }
       }
 
-      context.strokeStyle = rgba(settings.lineColor, settings.lineAlpha);
-      context.lineWidth = settings.lineWidth;
+      context.strokeStyle = rgba(settings.lineColor, lineAlpha);
+      context.lineWidth = lineWidth;
       context.stroke();
       return;
     }
 
-    context.lineWidth = settings.lineWidth;
+    context.lineWidth = lineWidth;
 
     for (let row = 0; row < rows; row += 1) {
       for (let col = 0; col < cols; col += 1) {
@@ -165,23 +173,23 @@ export class ReactiveGridRenderer {
 
         if (col < cols - 1) {
           const right = points[index + 1];
-          this._strokeBaseSegment(context, point, right, settings, coordinateSpace);
+          this._strokeBaseSegment(context, point, right, settings, coordinateSpace, style);
         }
 
         if (row < rows - 1) {
           const below = points[index + cols];
-          this._strokeBaseSegment(context, point, below, settings, coordinateSpace);
+          this._strokeBaseSegment(context, point, below, settings, coordinateSpace, style);
         }
       }
     }
   }
 
-  _strokeBaseSegment(context, a, b, settings, coordinateSpace) {
+  _strokeBaseSegment(context, a, b, settings, coordinateSpace, style) {
     if (!a || !b) {
       return;
     }
 
-    const alpha = settings.lineAlpha * this._segmentVisibility(a, b);
+    const alpha = this._getLineAlpha(settings, style) * this._segmentVisibility(a, b);
     if (alpha <= 0.0015) {
       return;
     }
@@ -194,6 +202,7 @@ export class ReactiveGridRenderer {
   }
 
   _drawHighlightedLines(context, frame, settings, coordinateSpace) {
+    const style = this._getStyle(settings);
     const { cols, rows, points } = frame;
 
     for (let row = 0; row < rows; row += 1) {
@@ -206,25 +215,29 @@ export class ReactiveGridRenderer {
 
         if (col < cols - 1) {
           const right = points[index + 1];
-          this._strokeHighlightSegment(context, point, right, settings, coordinateSpace);
+          this._strokeHighlightSegment(context, point, right, settings, coordinateSpace, style);
         }
 
         if (row < rows - 1) {
           const below = points[index + cols];
-          this._strokeHighlightSegment(context, point, below, settings, coordinateSpace);
+          this._strokeHighlightSegment(context, point, below, settings, coordinateSpace, style);
         }
       }
     }
   }
 
-  _strokeHighlightSegment(context, a, b, settings, coordinateSpace) {
+  _strokeHighlightSegment(context, a, b, settings, coordinateSpace, style) {
     const nodeInfluence = Math.max(a.nodeVisualInfluence ?? a.nodeInfluence, b.nodeVisualInfluence ?? b.nodeInfluence);
     const linkInfluence = Math.max(a.linkInfluence, b.linkInfluence);
     const pointerInfluence = Math.max(a.pointerInfluence, b.pointerInfluence);
     const nodeGlow = settings.nodeGlow ?? 1;
     const nodeStrength = nodeInfluence * nodeGlow;
     const nodeColorStrength = this._segmentNodeColorInfluence(a, b) * nodeGlow;
-    const alpha = nodeStrength * settings.lineAlpha * 1.8 + linkInfluence * 0.22 + pointerInfluence * 0.12;
+    const alpha =
+      (nodeStrength * this._getLineAlpha(settings, style) * 1.8 +
+        linkInfluence * 0.22 +
+        pointerInfluence * 0.12) *
+      this._getHighlightScale(style);
 
     if (alpha <= 0.012) {
       return;
@@ -239,16 +252,31 @@ export class ReactiveGridRenderer {
         : nodeColorStrength > 0.018
           ? nodeTint
           : settings.lineColor;
+    const lineWidth =
+      this._getLineWidth(settings, style) + linkInfluence * 0.8 + pointerInfluence * 0.35;
+
+    if (this._shouldUseColorGlow(settings)) {
+      const glowStrength = Math.max(linkInfluence * Math.max(settings.linkGlow ?? 1, 0.3), nodeStrength, pointerInfluence);
+      this._strokeGlowSegment(context, a, b, coordinateSpace, {
+        tint,
+        alpha: Math.min(0.34, alpha * (0.18 + glowStrength * 0.28)),
+        lineWidth: lineWidth + 2.4 + glowStrength * 3.2,
+      });
+    }
 
     context.beginPath();
     context.moveTo(this._x(a, coordinateSpace), this._y(a, coordinateSpace));
     context.lineTo(this._x(b, coordinateSpace), this._y(b, coordinateSpace));
     context.strokeStyle = rgba(tint, alpha);
-    context.lineWidth = settings.lineWidth + linkInfluence * 0.8 + pointerInfluence * 0.35;
+    context.lineWidth = lineWidth;
     context.stroke();
   }
 
   _drawDots(context, points, settings, coordinateSpace) {
+    const style = this._getStyle(settings);
+    const dotRadius = this._getDotRadius(settings, style);
+    const dotAlpha = this._getDotAlpha(settings, style);
+
     if ((settings.gridVisibility ?? 1) >= 0.999) {
       context.beginPath();
 
@@ -259,11 +287,11 @@ export class ReactiveGridRenderer {
 
         const x = this._x(point, coordinateSpace);
         const y = this._y(point, coordinateSpace);
-        context.moveTo(x + settings.dotRadius, y);
-        context.arc(x, y, settings.dotRadius, 0, Math.PI * 2);
+        context.moveTo(x + dotRadius, y);
+        context.arc(x, y, dotRadius, 0, Math.PI * 2);
       }
 
-      context.fillStyle = rgba(settings.dotColor, settings.dotAlpha);
+      context.fillStyle = rgba(settings.dotColor, dotAlpha);
       context.fill();
       return;
     }
@@ -273,7 +301,7 @@ export class ReactiveGridRenderer {
         continue;
       }
 
-      const alpha = settings.dotAlpha * this._pointVisibility(point);
+      const alpha = dotAlpha * this._pointVisibility(point);
       if (alpha <= 0.003) {
         continue;
       }
@@ -281,7 +309,7 @@ export class ReactiveGridRenderer {
       const x = this._x(point, coordinateSpace);
       const y = this._y(point, coordinateSpace);
       context.beginPath();
-      context.arc(x, y, settings.dotRadius, 0, Math.PI * 2);
+      context.arc(x, y, dotRadius, 0, Math.PI * 2);
       context.fillStyle = rgba(settings.dotColor, alpha);
       context.fill();
     }
@@ -316,6 +344,10 @@ export class ReactiveGridRenderer {
   }
 
   _drawHighlightedDots(context, points, settings, coordinateSpace) {
+    const style = this._getStyle(settings);
+    const dotRadius = this._getDotRadius(settings, style);
+    const highlightScale = this._getHighlightScale(style);
+
     for (const point of points) {
       if (!point) {
         continue;
@@ -324,7 +356,8 @@ export class ReactiveGridRenderer {
       const nodeInfluence = point.nodeVisualInfluence ?? point.nodeInfluence;
       const nodeStrength = nodeInfluence * 0.5 * (settings.nodeGlow ?? 1);
       const nodeColorStrength = (point.nodeColorInfluence ?? 0) * 0.5 * (settings.nodeGlow ?? 1);
-      const strength = Math.max(nodeStrength, point.linkInfluence, point.pointerInfluence * 0.8);
+      const strength =
+        Math.max(nodeStrength, point.linkInfluence, point.pointerInfluence * 0.8) * highlightScale;
       if (strength <= 0.025) {
         continue;
       }
@@ -339,26 +372,133 @@ export class ReactiveGridRenderer {
       const x = this._x(point, coordinateSpace);
       const y = this._y(point, coordinateSpace);
 
+      if (this._shouldUseColorGlow(settings)) {
+        const glowScale =
+          point.linkInfluence > 0.02
+            ? Math.max(settings.linkGlow ?? 1, 0.4)
+            : nodeColorStrength > 0.018
+              ? Math.max(settings.nodeGlow ?? 1, 0.4)
+              : 0.8;
+        this._fillGlowDot(
+          context,
+          x,
+          y,
+          dotRadius + strength * 3,
+          tint,
+          Math.min(0.3, strength * 0.24 * glowScale)
+        );
+      }
+
       context.beginPath();
-      context.arc(x, y, settings.dotRadius + strength * 1.4, 0, Math.PI * 2);
+      context.arc(x, y, dotRadius + strength * 1.4, 0, Math.PI * 2);
       context.fillStyle = rgba(tint, strength * 0.6);
       context.fill();
     }
   }
 
+  _getStyle(settings) {
+    return getGridStyleDefinition(settings.gridStyle);
+  }
+
+  _getDotAlpha(settings, style) {
+    return settings.dotAlpha * (style.dotAlphaScale ?? 1);
+  }
+
+  _getDotRadius(settings, style) {
+    return settings.dotRadius * (style.dotRadiusScale ?? 1);
+  }
+
+  _getLineAlpha(settings, style) {
+    return settings.lineAlpha * (style.lineAlphaScale ?? 1);
+  }
+
+  _getLineWidth(settings, style) {
+    return settings.lineWidth * (style.lineWidthScale ?? 1);
+  }
+
+  _getHighlightScale(style) {
+    return style.highlightScale ?? 1;
+  }
+
+  _getBackgroundGlowScale(style) {
+    return style.backgroundGlowScale ?? 1;
+  }
+
   _drawConnectionLines(context, links, settings) {
     for (const link of links) {
-      const midpointX = (link.x1 + link.x2) * 0.5;
+      const tint = link.active ? settings.highlightColor : settings.linkIdleColor;
+      const alpha = link.active ? 0.92 : 0.28;
+      const lineWidth = link.active ? 2.3 : 1.4;
+
+      if (this._shouldUseColorGlow(settings)) {
+        const glowWeight = Math.max(settings.linkGlow ?? 1, 0.35) * (link.active ? 1 : 0.72);
+        this._strokeConnectionGlow(context, link, {
+          tint,
+          alpha: Math.min(0.28, alpha * (0.24 + glowWeight * 0.16)),
+          lineWidth: lineWidth + 2 + glowWeight * 2.4,
+        });
+      }
+
       context.beginPath();
-      context.moveTo(link.x1, link.y1);
-      context.bezierCurveTo(midpointX, link.y1, midpointX, link.y2, link.x2, link.y2);
-      context.strokeStyle = rgba(
-        link.active ? settings.highlightColor : settings.linkIdleColor,
-        link.active ? 0.92 : 0.28
-      );
-      context.lineWidth = link.active ? 2.3 : 1.4;
+      this._traceConnectionCurve(context, link);
+      context.strokeStyle = rgba(tint, alpha);
+      context.lineWidth = lineWidth;
       context.stroke();
     }
+  }
+
+  _strokeGlowSegment(context, a, b, coordinateSpace, { tint, alpha, lineWidth }) {
+    if (alpha <= 0.003 || lineWidth <= 0) {
+      return;
+    }
+
+    context.save();
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.beginPath();
+    context.moveTo(this._x(a, coordinateSpace), this._y(a, coordinateSpace));
+    context.lineTo(this._x(b, coordinateSpace), this._y(b, coordinateSpace));
+    context.strokeStyle = rgba(tint, alpha);
+    context.lineWidth = lineWidth;
+    context.stroke();
+    context.restore();
+  }
+
+  _fillGlowDot(context, x, y, radius, tint, alpha) {
+    if (alpha <= 0.003 || radius <= 0) {
+      return;
+    }
+
+    context.beginPath();
+    context.arc(x, y, radius, 0, Math.PI * 2);
+    context.fillStyle = rgba(tint, alpha);
+    context.fill();
+  }
+
+  _strokeConnectionGlow(context, link, { tint, alpha, lineWidth }) {
+    if (alpha <= 0.003 || lineWidth <= 0) {
+      return;
+    }
+
+    context.save();
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.beginPath();
+    this._traceConnectionCurve(context, link);
+    context.strokeStyle = rgba(tint, alpha);
+    context.lineWidth = lineWidth;
+    context.stroke();
+    context.restore();
+  }
+
+  _traceConnectionCurve(context, link) {
+    const midpointX = (link.x1 + link.x2) * 0.5;
+    context.moveTo(link.x1, link.y1);
+    context.bezierCurveTo(midpointX, link.y1, midpointX, link.y2, link.x2, link.y2);
+  }
+
+  _shouldUseColorGlow(settings) {
+    return Boolean(settings.colorGlow);
   }
 
   _maskNodeCards(context, nodes, settings) {
