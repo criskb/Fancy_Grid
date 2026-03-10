@@ -1,4 +1,8 @@
-import { DEFAULT_GRID_SETTINGS, mergeSettings } from "/core/defaultSettings.js";
+import {
+  DEFAULT_GRID_SETTINGS,
+  NODE_VISUAL_FALLOFF_OPTIONS,
+  mergeSettings,
+} from "/core/defaultSettings.js";
 import { ReactiveGridField } from "/core/fieldEngine.js";
 import { ReactiveGridRenderer } from "/core/gridRenderer.js";
 import { GRID_STYLE_OPTIONS } from "/core/gridStyles.js";
@@ -93,9 +97,12 @@ const CONTROL_DEFS = [
   { key: "spacing", label: "Spacing", min: 18, max: 42, step: 1 },
   { key: "radius", label: "Radius", min: 120, max: 320, step: 2 },
   { key: "strength", label: "Strength", min: 0.05, max: 0.4, step: 0.01 },
+  { key: "connectionInfluence", label: "Connection Pull", min: 0, max: 0.5, step: 0.01 },
   { key: "spring", label: "Spring", min: 0.05, max: 0.3, step: 0.01 },
   { key: "damping", label: "Damping", min: 0.65, max: 0.92, step: 0.01 },
+  { key: "gridVisibility", label: "Grid Visibility", min: 0, max: 1, step: 0.01 },
   { key: "linkGlow", label: "Link Glow", min: 0, max: 2, step: 0.05 },
+  { key: "nodeGlow", label: "Node Glow", min: 0, max: 2, step: 0.05 },
   { key: "dotAlpha", label: "Dot Alpha", min: 0.2, max: 1, step: 0.01 },
   { key: "lineAlpha", label: "Line Alpha", min: 0.02, max: 0.18, step: 0.002 },
 ];
@@ -104,6 +111,11 @@ const SELECT_CONTROL_DEFS = [
     key: "gridStyle",
     label: "Grid Style",
     options: GRID_STYLE_OPTIONS,
+  },
+  {
+    key: "nodeVisualFalloff",
+    label: "Node Falloff",
+    options: NODE_VISUAL_FALLOFF_OPTIONS,
   },
   {
     key: "colorGlow",

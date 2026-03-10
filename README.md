@@ -27,6 +27,7 @@ The result is a cleaner canvas with more spatial feedback, without adding backen
 - Frontend-only ComfyUI extension with `WEB_DIRECTORY = "./web"`
 - Reactive dot-and-line background rendered behind nodes
 - Multiple dynamic grid styles with a `Grid Style` setting
+- Optional `Color glow` aura pass for highlighted colors
 - Sticky reroute snapping to grid points
 - Shift-drag cut gesture for slicing links and nodes
 - Standalone demo app for tuning the field engine in isolation
@@ -45,6 +46,16 @@ Current styles:
 You can switch styles from:
 
 - `Settings > Fancy Grid > General > Grid Style`
+
+## Settings
+
+Key controls currently exposed in ComfyUI:
+
+- `Grid Style` to switch between the live background variants
+- `Color glow` to add a soft aura around highlighted colors and cable previews
+- `Connection glow` and `Node glow` to shape how strongly links and nearby nodes light the field
+- `Grid visibility`, `Dot brightness`, and `Line brightness` to tune the base grid density and contrast
+- motion and field controls like spacing, radius, spring, damping, node influence, and connection influence
 
 ## Interaction Notes
 
@@ -88,7 +99,7 @@ Open the printed local URL, then:
 - drag from an output port to an input port to preview cable influence
 - scroll to zoom
 - drag empty space to pan
-- switch grid styles live from the demo controls
+- switch grid styles, glow, and field response live from the demo controls
 
 ## Project Layout
 
