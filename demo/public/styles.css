@@ -186,12 +186,15 @@ body {
   top: 24px;
   left: 24px;
   width: min(360px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
   padding: 22px 22px 18px;
   border-radius: 24px;
   background: var(--panel);
   border: 1px solid var(--panel-border);
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .demo-panel__eyebrow {
@@ -246,6 +249,19 @@ body {
   margin-top: 18px;
   display: grid;
   gap: 12px;
+}
+
+.demo-panel::-webkit-scrollbar {
+  width: 10px;
+}
+
+.demo-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.demo-panel::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .demo-control {
