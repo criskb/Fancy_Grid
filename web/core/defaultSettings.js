@@ -42,11 +42,16 @@ export const DEFAULT_GRID_SETTINGS = Object.freeze({
 
 export const PERFORMANCE_PROFILES = Object.freeze({
   eco: Object.freeze({
-    maxNodes: 10,
-    maxLinks: 28,
-    viewportPadding: 240,
-    idleFps: 14,
-    activeFps: 26,
+    maxNodes: 8,
+    maxLinks: 16,
+    viewportPadding: 180,
+    idleFps: 10,
+    activeFps: 18,
+    viewMarginCells: 1.5,
+    idleGridStep: 2,
+    allowColorGlow: false,
+    idleSkipBaseDots: true,
+    idleSkipHighlightDots: true,
   }),
   balanced: Object.freeze({
     maxNodes: 18,
@@ -54,6 +59,11 @@ export const PERFORMANCE_PROFILES = Object.freeze({
     viewportPadding: 320,
     idleFps: 20,
     activeFps: 40,
+    viewMarginCells: 3,
+    idleGridStep: 1,
+    allowColorGlow: true,
+    idleSkipBaseDots: false,
+    idleSkipHighlightDots: false,
   }),
   quality: Object.freeze({
     maxNodes: 32,
@@ -61,6 +71,11 @@ export const PERFORMANCE_PROFILES = Object.freeze({
     viewportPadding: 420,
     idleFps: 24,
     activeFps: 60,
+    viewMarginCells: 3,
+    idleGridStep: 1,
+    allowColorGlow: true,
+    idleSkipBaseDots: false,
+    idleSkipHighlightDots: false,
   }),
 });
 

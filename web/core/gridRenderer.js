@@ -1,4 +1,4 @@
-import { DEFAULT_GRID_SETTINGS, mergeSettings } from "./defaultSettings.js";
+import { DEFAULT_GRID_SETTINGS, getPerformanceProfile, mergeSettings } from "./defaultSettings.js";
 import { getGridStyleDefinition } from "./gridStyles.js";
 import { rgba, roundedRectPath } from "./geometry.js";
 
@@ -34,14 +34,21 @@ export class ReactiveGridRenderer {
     }
 
     this._drawBaseLines(context, frame, settings, "screen");
-    this._drawHighlightedLines(context, frame, settings, "screen");
+    if (this._shouldDrawHighlights(frame)) {
+      this._drawHighlightedLines(context, frame, settings, "screen");
+    }
 
     if (drawConnectionPaths) {
       this._drawConnectionLines(context, frame.visibleLinks, settings);
     }
 
-    this._drawDots(context, frame.points, settings, "screen");
-    this._drawHighlightedDots(context, frame.points, settings, "screen");
+    if (!this._shouldSkipBaseDots(frame, settings)) {
+      this._drawDots(context, frame.points, settings, "screen");
+    }
+
+    if (!this._shouldSkipHighlightDots(frame, settings)) {
+      this._drawHighlightedDots(context, frame.points, settings, "screen");
+    }
 
     if (frame.screenNodes.length) {
       this._maskNodeCards(context, frame.screenNodes, settings);
@@ -61,9 +68,17 @@ export class ReactiveGridRenderer {
     }
 
     this._drawBaseLines(context, frame, settings, "world");
-    this._drawHighlightedLines(context, frame, settings, "world");
-    this._drawDots(context, frame.points, settings, "world");
-    this._drawHighlightedDots(context, frame.points, settings, "world");
+    if (this._shouldDrawHighlights(frame)) {
+      this._drawHighlightedLines(context, frame, settings, "world");
+    }
+
+    if (!this._shouldSkipBaseDots(frame, settings)) {
+      this._drawDots(context, frame.points, settings, "world");
+    }
+
+    if (!this._shouldSkipHighlightDots(frame, settings)) {
+      this._drawHighlightedDots(context, frame.points, settings, "world");
+    }
   }
 
   renderScreenBackground(context, width, height, options = {}) {
@@ -498,7 +513,22 @@ export class ReactiveGridRenderer {
   }
 
   _shouldUseColorGlow(settings) {
-    return Boolean(settings.colorGlow);
+    const profile = getPerformanceProfile(settings.performanceMode);
+    return Boolean(settings.colorGlow && (profile.allowColorGlow ?? true));
+  }
+
+  _shouldDrawHighlights(frame) {
+    return Boolean(frame?.hasDirectInteraction || (frame?.stats?.influence ?? 0) > 0.01);
+  }
+
+  _shouldSkipBaseDots(frame, settings) {
+    const profile = getPerformanceProfile(settings.performanceMode);
+    return Boolean(!frame?.hasDirectInteraction && (profile.idleSkipBaseDots ?? false));
+  }
+
+  _shouldSkipHighlightDots(frame, settings) {
+    const profile = getPerformanceProfile(settings.performanceMode);
+    return Boolean(!frame?.hasDirectInteraction && (profile.idleSkipHighlightDots ?? false));
   }
 
   _maskNodeCards(context, nodes, settings) {

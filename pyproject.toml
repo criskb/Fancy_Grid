@@ -9,6 +9,13 @@ authors = [
   { name = "Cris Bjorndal" },
 ]
 
+[project.urls]
+Repository = "https://github.com/criskb/Fancy_Grid"
+
+[tool.comfy]
+PublisherId = "criskb"
+DisplayName = "Fancy Grid"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

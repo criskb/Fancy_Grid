@@ -60,7 +60,9 @@ export class ReactiveGridField {
     const style = getGridStyleDefinition(settings.gridStyle);
     const profile = getPerformanceProfile(settings.performanceMode);
     const worldBounds = buildWorldBounds(viewport);
-    const cellMargin = settings.spacing * settings.viewMarginCells;
+    const hasDirectInteraction = Boolean(isInteracting || pointer?.active || activeCable);
+    const gridStep = hasDirectInteraction ? 1 : Math.max(profile.idleGridStep ?? 1, 1);
+    const cellMargin = settings.spacing * Math.max(profile.viewMarginCells ?? settings.viewMarginCells, 0);
     const simulationBounds = expandBounds(worldBounds, cellMargin);
     const influenceBounds = expandBounds(worldBounds, profile.viewportPadding / Math.max(viewport.zoom, 0.001));
     const visibleNodes = this._prepareNodes(nodes, influenceBounds, profile.maxNodes, settings);
@@ -71,8 +73,8 @@ export class ReactiveGridField {
       settings
     );
     const gridBounds = this._gridBounds(simulationBounds, settings.spacing);
-    const rows = gridBounds.endRow - gridBounds.startRow + 1;
-    const cols = gridBounds.endCol - gridBounds.startCol + 1;
+    const rows = Math.floor((gridBounds.endRow - gridBounds.startRow) / gridStep) + 1;
+    const cols = Math.floor((gridBounds.endCol - gridBounds.startCol) / gridStep) + 1;
     const framePoints = new Array(rows * cols);
 
     this.frameId += 1;
@@ -91,8 +93,12 @@ export class ReactiveGridField {
     let energy = 0;
     let maxInfluence = 0;
 
-    for (let row = gridBounds.startRow; row <= gridBounds.endRow; row += 1) {
-      for (let col = gridBounds.startCol; col <= gridBounds.endCol; col += 1) {
+    for (let row = gridBounds.startRow, rowIndex = 0; row <= gridBounds.endRow; row += gridStep, rowIndex += 1) {
+      for (
+        let col = gridBounds.startCol, colIndex = 0;
+        col <= gridBounds.endCol;
+        col += gridStep, colIndex += 1
+      ) {
         const restPoint = resolveGridRestPoint({
           col,
           row,
@@ -151,8 +157,6 @@ export class ReactiveGridField {
           influence.pointerInfluence
         );
 
-        const rowIndex = row - gridBounds.startRow;
-        const colIndex = col - gridBounds.startCol;
         framePoints[rowIndex * cols + colIndex] = point;
       }
     }
@@ -164,6 +168,8 @@ export class ReactiveGridField {
       height: viewport.height,
       rows,
       cols,
+      samplingStep: gridStep,
+      hasDirectInteraction,
       points: framePoints,
       worldBounds,
       screenNodes: visibleNodes.map((node) => this._projectRect(node, viewport)),
@@ -185,6 +191,8 @@ export class ReactiveGridField {
       height: viewport?.height ?? 0,
       rows: 0,
       cols: 0,
+      samplingStep: 1,
+      hasDirectInteraction: false,
       points: [],
       worldBounds: null,
       screenNodes: [],
@@ -212,23 +220,31 @@ export class ReactiveGridField {
   _prepareNodes(nodes, bounds, maxNodes, settings) {
     const centerX = (bounds.left + bounds.right) * 0.5;
     const centerY = (bounds.top + bounds.bottom) * 0.5;
+    const visible = [];
 
-    return nodes
-      .map((node) => ({
+    for (const node of nodes) {
+      const rectBounds = {
+        left: node.x,
+        top: node.y,
+        right: node.x + node.width,
+        bottom: node.y + node.height,
+      };
+
+      if (!boundsIntersect(rectBounds, bounds)) {
+        continue;
+      }
+
+      const radius = node.radius ?? settings.nodeCornerRadius;
+      visible.push({
         id: node.id,
         x: node.x,
         y: node.y,
         width: node.width,
         height: node.height,
-        radius: node.radius ?? settings.nodeCornerRadius,
+        radius,
         color: node.color ?? null,
         rgb: parseColorString(node.color),
-        bounds: {
-          left: node.x,
-          top: node.y,
-          right: node.x + node.width,
-          bottom: node.y + node.height,
-        },
+        bounds: rectBounds,
         influenceBounds: {
           left: node.x - settings.radius - settings.nodePadding,
           top: node.y - settings.radius - settings.nodePadding,
@@ -241,17 +257,19 @@ export class ReactiveGridField {
           width: node.width + settings.nodePadding * 2,
           height: node.height + settings.nodePadding * 2,
         },
-        paddedRadius: (node.radius ?? settings.nodeCornerRadius) + settings.nodePadding,
-      }))
-      .filter((node) => boundsIntersect(node.bounds, bounds))
-      .sort((a, b) => {
-        const ax = a.x + a.width * 0.5 - centerX;
-        const ay = a.y + a.height * 0.5 - centerY;
-        const bx = b.x + b.width * 0.5 - centerX;
-        const by = b.y + b.height * 0.5 - centerY;
-        return ax * ax + ay * ay - (bx * bx + by * by);
-      })
-      .slice(0, maxNodes);
+        paddedRadius: radius + settings.nodePadding,
+      });
+    }
+
+    visible.sort((a, b) => {
+      const ax = a.x + a.width * 0.5 - centerX;
+      const ay = a.y + a.height * 0.5 - centerY;
+      const bx = b.x + b.width * 0.5 - centerX;
+      const by = b.y + b.height * 0.5 - centerY;
+      return ax * ax + ay * ay - (bx * bx + by * by);
+    });
+
+    return visible.slice(0, maxNodes);
   }
 
   _prepareLinks(links, bounds, maxLinks, settings) {
@@ -284,8 +302,6 @@ export class ReactiveGridField {
       group.segments.push({
         ...link,
         distanceScore,
-        rgb: parseColorString(link.color),
-        influenceBounds: createExpandedSegmentBounds(link, settings.linkRadius),
       });
       group.active ||= Boolean(link.active);
     }
@@ -334,7 +350,7 @@ export class ReactiveGridField {
       totalCost += proxySegments.length;
     }
 
-    return selected;
+    return selected.map((segment) => finalizePreparedLinkSegment(segment, settings));
   }
 
   _accumulateInfluence(px, py, nodes, links, pointer, settings) {
@@ -581,4 +597,12 @@ function buildProxySegments(segments, maxSegments = 1) {
   }
 
   return selected;
+}
+
+function finalizePreparedLinkSegment(segment, settings) {
+  return {
+    ...segment,
+    rgb: parseColorString(segment.color),
+    influenceBounds: createExpandedSegmentBounds(segment, settings.linkRadius),
+  };
 }

@@ -1,3 +1,6 @@
+const COLOR_PARSE_CACHE_LIMIT = 192;
+const colorParseCache = new Map();
+
 function clampChannel(value) {
   return Math.min(Math.max(Math.round(value), 0), 255);
 }
@@ -12,32 +15,37 @@ export function parseColorString(value) {
     return null;
   }
 
-  if (normalized.startsWith("#")) {
-    return parseHexColor(normalized);
+  if (colorParseCache.has(normalized)) {
+    return colorParseCache.get(normalized);
   }
 
-  const rgbMatch = normalized.match(/^rgba?\(([^)]+)\)$/i);
-  if (rgbMatch) {
-    const channels = rgbMatch[1]
-      .split(",")
-      .map((channel) => Number.parseFloat(channel.trim()))
-      .filter((channel) => Number.isFinite(channel));
+  let parsed = null;
+  if (normalized.startsWith("#")) {
+    parsed = parseHexColor(normalized);
+  } else {
+    const rgbMatch = normalized.match(/^rgba?\(([^)]+)\)$/i);
+    if (rgbMatch) {
+      const channels = rgbMatch[1]
+        .split(",")
+        .map((channel) => Number.parseFloat(channel.trim()))
+        .filter((channel) => Number.isFinite(channel));
 
-    if (channels.length >= 3) {
-      return {
-        r: clampChannel(channels[0]),
-        g: clampChannel(channels[1]),
-        b: clampChannel(channels[2]),
-      };
+      if (channels.length >= 3) {
+        parsed = {
+          r: clampChannel(channels[0]),
+          g: clampChannel(channels[1]),
+          b: clampChannel(channels[2]),
+        };
+      }
+    }
+
+    if (!parsed) {
+      parsed = parseCssColor(normalized);
     }
   }
 
-  const cssParsed = parseCssColor(normalized);
-  if (cssParsed) {
-    return cssParsed;
-  }
-
-  return null;
+  cacheParsedColor(normalized, parsed);
+  return parsed;
 }
 
 export function formatRgbColor({ r, g, b }) {
@@ -118,4 +126,15 @@ function getColorContext() {
   const canvas = globalThis.document?.createElement?.("canvas");
   colorContext = canvas?.getContext?.("2d") ?? null;
   return colorContext;
+}
+
+function cacheParsedColor(key, value) {
+  if (colorParseCache.size >= COLOR_PARSE_CACHE_LIMIT) {
+    const oldestKey = colorParseCache.keys().next().value;
+    if (typeof oldestKey === "string") {
+      colorParseCache.delete(oldestKey);
+    }
+  }
+
+  colorParseCache.set(key, value ? Object.freeze(value) : null);
 }

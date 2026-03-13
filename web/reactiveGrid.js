@@ -4,6 +4,7 @@ import {
   GRID_STYLE_OPTIONS,
   NODE_VISUAL_FALLOFF_OPTIONS,
   getPerformanceProfile,
+  mergeSettings,
 } from "./core/defaultSettings.js";
 import { ReactiveGridField } from "./core/fieldEngine.js";
 import { ReactiveGridRenderer } from "./core/gridRenderer.js";
@@ -48,6 +49,9 @@ const SETTING_IDS = {
   lineAlpha: "FancyGrid.LineAlpha",
   performanceMode: "FancyGrid.PerformanceMode",
 };
+const SETTING_KEYS_BY_ID = Object.freeze(
+  Object.fromEntries(Object.entries(SETTING_IDS).map(([key, id]) => [id, key]))
+);
 
 class FancyGridController {
   constructor(appInstance) {
@@ -70,6 +74,7 @@ class FancyGridController {
     this.snapPreview = null;
     this.redrawFrameId = 0;
     this.redrawLoopActive = false;
+    this.redrawTargetFps = null;
     this.cutGesture = null;
     this.cutFades = [];
     this.nativePreviewColorSnapshot = null;
@@ -87,25 +92,7 @@ class FancyGridController {
   }
 
   refreshSettings() {
-    this.themeColors = getThemeColors();
-    this.settings = this.readSettings();
-    this.field.setSettings(this.settings);
-    this.renderer.setSettings(this.settings);
-    this.lastFrameAt = performance.now();
-
-    if (!this.settings.enabled) {
-      this.field.reset();
-      this.lastFrame = null;
-      this.snapPreview = null;
-      this.removeCutPointerListeners();
-      this.cutGesture = null;
-      this.cutFades = [];
-      this.restoreNativePreviewLinkColors();
-      this.draggedStickyReroutes.clear();
-      this.syncRedrawLoop(false);
-    }
-
-    this.requestRedraw();
+    this.applySettings(this.readSettings());
   }
 
   readSettings() {
@@ -113,6 +100,7 @@ class FancyGridController {
 
     return {
       ...DEFAULT_GRID_SETTINGS,
+      ...this.getThemeSettingValues(themeColors),
       enabled: getSettingValue(this.app, SETTING_IDS.enabled, DEFAULT_GRID_SETTINGS.enabled),
       gridStyle: getSettingValue(this.app, SETTING_IDS.gridStyle, DEFAULT_GRID_SETTINGS.gridStyle),
       spacing: getSettingValue(this.app, SETTING_IDS.spacing, DEFAULT_GRID_SETTINGS.spacing),
@@ -140,6 +128,16 @@ class FancyGridController {
       colorGlow: getSettingValue(this.app, SETTING_IDS.colorGlow, DEFAULT_GRID_SETTINGS.colorGlow),
       dotAlpha: getSettingValue(this.app, SETTING_IDS.dotAlpha, DEFAULT_GRID_SETTINGS.dotAlpha),
       lineAlpha: getSettingValue(this.app, SETTING_IDS.lineAlpha, DEFAULT_GRID_SETTINGS.lineAlpha),
+      performanceMode: getSettingValue(
+        this.app,
+        SETTING_IDS.performanceMode,
+        DEFAULT_GRID_SETTINGS.performanceMode
+      ),
+    };
+  }
+
+  getThemeSettingValues(themeColors = this.themeColors ?? getThemeColors()) {
+    return {
       dotColor: themeColors.dotColor,
       lineColor: themeColors.lineColor,
       linkIdleColor: themeColors.linkIdleColor,
@@ -148,12 +146,46 @@ class FancyGridController {
       backgroundColorTop: themeColors.backgroundColorTop,
       backgroundColorBottom: themeColors.backgroundColorBottom,
       backgroundGlowColor: themeColors.backgroundGlowColor,
-      performanceMode: getSettingValue(
-        this.app,
-        SETTING_IDS.performanceMode,
-        DEFAULT_GRID_SETTINGS.performanceMode
-      ),
     };
+  }
+
+  applySettings(nextSettings) {
+    this.themeColors = getThemeColors();
+    this.settings = mergeSettings(
+      DEFAULT_GRID_SETTINGS,
+      mergeSettings(nextSettings, this.getThemeSettingValues(this.themeColors))
+    );
+    this.field.setSettings(this.settings);
+    this.renderer.setSettings(this.settings);
+    this.lastFrameAt = performance.now();
+
+    if (!this.settings.enabled) {
+      this.field.reset();
+      this.lastFrame = null;
+      this.snapPreview = null;
+      this.removeCutPointerListeners();
+      this.cutGesture = null;
+      this.cutFades = [];
+      this.restoreNativePreviewLinkColors();
+      this.draggedStickyReroutes.clear();
+      this.redrawTargetFps = null;
+      this.syncRedrawLoop(false);
+    }
+
+    this.requestRedraw();
+  }
+
+  applySettingValue(settingId, value) {
+    const settingKey = SETTING_KEYS_BY_ID[settingId];
+    if (!settingKey) {
+      this.refreshSettings();
+      return;
+    }
+
+    this.applySettings({
+      ...this.settings,
+      [settingKey]: value,
+    });
   }
 
   installCanvasHooks() {
@@ -853,6 +885,10 @@ class FancyGridController {
     const links = extractLinks(this.app);
     const isInteracting = isCanvasInteracting(this.app);
     const pointerOverNode = this.pointer.active && isPointerOverNode(this.pointer, nodes);
+    const performanceProfile = getPerformanceProfile(this.settings.performanceMode);
+    const hasDirectActivity = Boolean(
+      isInteracting || activeCable || this.cutGesture || (this.pointer.active && !pointerOverNode)
+    );
 
     if (isInteracting || this.cutGesture) {
       this.lastInteractionAt = now;
@@ -886,6 +922,10 @@ class FancyGridController {
     if (this.snapPreview) {
       this.drawSnapPreview(ctx, viewport, this.snapPreview);
     }
+
+    this.redrawTargetFps = hasDirectActivity
+      ? performanceProfile.activeFps
+      : performanceProfile.idleFps;
 
     this.syncRedrawLoop(
       frame.active ||
@@ -960,6 +1000,7 @@ class FancyGridController {
         window.cancelAnimationFrame(this.redrawFrameId);
         this.redrawFrameId = 0;
       }
+      this.redrawTargetFps = null;
       return;
     }
 
@@ -968,7 +1009,8 @@ class FancyGridController {
     }
 
     const profile = getPerformanceProfile(this.settings.performanceMode);
-    const frameInterval = 1000 / Math.max(profile.activeFps, 1);
+    const targetFps = this.redrawTargetFps ?? profile.idleFps ?? profile.activeFps;
+    const frameInterval = 1000 / Math.max(targetFps, 1);
     const earliestAt = performance.now() + frameInterval;
 
     const tick = (rafNow) => {
@@ -1139,6 +1181,12 @@ const runtime = {
   controller: null,
 };
 
+function createSettingChangeHandler(settingId) {
+  return (newValue) => {
+    runtime.controller?.applySettingValue(settingId, newValue);
+  };
+}
+
 app.registerExtension({
   name: EXTENSION_NAME,
   settings: [
@@ -1148,7 +1196,7 @@ app.registerExtension({
       type: "boolean",
       defaultValue: DEFAULT_GRID_SETTINGS.enabled,
       category: ["Fancy Grid", "General", "Enable"],
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.enabled),
     },
     {
       id: SETTING_IDS.gridStyle,
@@ -1157,7 +1205,7 @@ app.registerExtension({
       defaultValue: DEFAULT_GRID_SETTINGS.gridStyle,
       options: GRID_STYLE_OPTIONS,
       category: ["Fancy Grid", "General", "Grid Style"],
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.gridStyle),
     },
     {
       id: SETTING_IDS.spacing,
@@ -1166,7 +1214,7 @@ app.registerExtension({
       attrs: { min: 18, max: 42, step: 1 },
       defaultValue: DEFAULT_GRID_SETTINGS.spacing,
       category: ["Fancy Grid", "Field", "Spacing"],
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.spacing),
     },
     {
       id: SETTING_IDS.radius,
@@ -1175,7 +1223,7 @@ app.registerExtension({
       attrs: { min: 120, max: 320, step: 2 },
       defaultValue: DEFAULT_GRID_SETTINGS.radius,
       category: ["Fancy Grid", "Field", "Radius"],
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.radius),
     },
     {
       id: SETTING_IDS.strength,
@@ -1184,7 +1232,7 @@ app.registerExtension({
       attrs: { min: 0, max: 0.4, step: 0.01 },
       defaultValue: DEFAULT_GRID_SETTINGS.strength,
       category: ["Fancy Grid", "Field", "Node Influence"],
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.strength),
     },
     {
       id: SETTING_IDS.connectionInfluence,
@@ -1193,7 +1241,7 @@ app.registerExtension({
       attrs: { min: 0, max: 0.5, step: 0.01 },
       defaultValue: DEFAULT_GRID_SETTINGS.connectionInfluence,
       category: ["Fancy Grid", "Field", "Connection Influence"],
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.connectionInfluence),
     },
     {
       id: SETTING_IDS.spring,
@@ -1202,7 +1250,7 @@ app.registerExtension({
       attrs: { min: 0.05, max: 0.3, step: 0.01 },
       defaultValue: DEFAULT_GRID_SETTINGS.spring,
       category: ["Fancy Grid", "Motion", "Spring"],
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.spring),
     },
     {
       id: SETTING_IDS.damping,
@@ -1211,7 +1259,7 @@ app.registerExtension({
       attrs: { min: 0.65, max: 0.92, step: 0.01 },
       defaultValue: DEFAULT_GRID_SETTINGS.damping,
       category: ["Fancy Grid", "Motion", "Damping"],
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.damping),
     },
     {
       id: SETTING_IDS.nodeVisualFalloff,
@@ -1220,7 +1268,7 @@ app.registerExtension({
       defaultValue: DEFAULT_GRID_SETTINGS.nodeVisualFalloff,
       options: NODE_VISUAL_FALLOFF_OPTIONS,
       category: ["Fancy Grid", "Look", "Node Falloff"],
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.nodeVisualFalloff),
     },
     {
       id: SETTING_IDS.gridVisibility,
@@ -1229,7 +1277,7 @@ app.registerExtension({
       attrs: { min: 0, max: 1, step: 0.01 },
       defaultValue: DEFAULT_GRID_SETTINGS.gridVisibility,
       category: ["Fancy Grid", "Look", "Visibility"],
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.gridVisibility),
     },
     {
       id: SETTING_IDS.linkGlow,
@@ -1238,7 +1286,7 @@ app.registerExtension({
       attrs: { min: 0, max: 2, step: 0.05 },
       defaultValue: DEFAULT_GRID_SETTINGS.linkGlow,
       category: ["Fancy Grid", "Links", "Glow"],
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.linkGlow),
     },
     {
       id: SETTING_IDS.nodeGlow,
@@ -1247,7 +1295,7 @@ app.registerExtension({
       attrs: { min: 0, max: 2, step: 0.05 },
       defaultValue: DEFAULT_GRID_SETTINGS.nodeGlow,
       category: ["Fancy Grid", "Look", "Node Glow"],
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.nodeGlow),
     },
     {
       id: SETTING_IDS.colorGlow,
@@ -1256,7 +1304,7 @@ app.registerExtension({
       defaultValue: DEFAULT_GRID_SETTINGS.colorGlow,
       category: ["Fancy Grid", "Look", "Color Glow"],
       tooltip: "Adds a soft colored aura around highlights and active cable previews.",
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.colorGlow),
     },
     {
       id: SETTING_IDS.dotAlpha,
@@ -1265,7 +1313,7 @@ app.registerExtension({
       attrs: { min: 0.15, max: 1, step: 0.01 },
       defaultValue: DEFAULT_GRID_SETTINGS.dotAlpha,
       category: ["Fancy Grid", "Look", "Dots"],
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.dotAlpha),
     },
     {
       id: SETTING_IDS.lineAlpha,
@@ -1274,7 +1322,7 @@ app.registerExtension({
       attrs: { min: 0.02, max: 0.25, step: 0.005 },
       defaultValue: DEFAULT_GRID_SETTINGS.lineAlpha,
       category: ["Fancy Grid", "Look", "Lines"],
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.lineAlpha),
     },
     {
       id: SETTING_IDS.performanceMode,
@@ -1287,7 +1335,7 @@ app.registerExtension({
         { text: "Quality", value: "quality" },
       ],
       category: ["Fancy Grid", "General", "Performance"],
-      onChange: () => runtime.controller?.refreshSettings(),
+      onChange: createSettingChangeHandler(SETTING_IDS.performanceMode),
     },
   ],
   async setup() {

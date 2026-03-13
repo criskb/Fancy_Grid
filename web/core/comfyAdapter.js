@@ -16,7 +16,9 @@ export async function waitForCanvas(app, timeoutMs = 10000) {
 }
 
 export function getSettingValue(app, id, fallback) {
-  const value = app?.ui?.settings?.getSettingValue?.(id);
+  const value =
+    app?.extensionManager?.setting?.get?.(id) ??
+    app?.ui?.settings?.getSettingValue?.(id);
   return value ?? fallback;
 }
 
