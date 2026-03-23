@@ -1,3 +1,5 @@
+import { estimateNodeSlotPosition } from "./nodeGeometry.js";
+
 const LINK_RENDER_MODE = Object.freeze({
   HIDDEN_LINK: -1,
   STRAIGHT_LINK: 0,
@@ -594,18 +596,7 @@ function getSlotPosition(node, isInput, slotIndex) {
 }
 
 function estimateSlotPosition(node, isInput, slotIndex = 0) {
-  const x = node.pos?.[0] ?? 0;
-  const y = node.pos?.[1] ?? 0;
-  const width = node.size?.[0] ?? node.width ?? 180;
-  const height = node.size?.[1] ?? node.height ?? 120;
-  const slots = isInput ? node.inputs ?? [] : node.outputs ?? [];
-  const count = Math.max(slots.length, slotIndex + 1, 1);
-  const gap = height / (count + 1);
-
-  return {
-    x: isInput ? x : x + width,
-    y: y + gap * (slotIndex + 1),
-  };
+  return estimateNodeSlotPosition(node, isInput, slotIndex);
 }
 
 function offsetPoint(point, direction, amount) {

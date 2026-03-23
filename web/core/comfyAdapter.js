@@ -1,4 +1,5 @@
 import { buildLinkSegments, getLinkRenderMode } from "./linkGeometry.js";
+import { estimateNodeSlotPosition, getNodeLayout } from "./nodeGeometry.js";
 
 export async function waitForCanvas(app, timeoutMs = 10000) {
   const startedAt = performance.now();
@@ -55,11 +56,7 @@ export function extractNodes(app) {
 
   return nodes.map((node) => ({
     id: node.id,
-    x: node.pos?.[0] ?? 0,
-    y: node.pos?.[1] ?? 0,
-    width: node.size?.[0] ?? node.width ?? 180,
-    height: node.size?.[1] ?? node.height ?? 120,
-    radius: Math.min(node.size?.[1] ?? 120, node.size?.[0] ?? 180) * 0.12,
+    ...getNodeLayout(node),
     color: resolveNodeColor(node),
   }));
 }
@@ -353,17 +350,7 @@ function getSlotPosition(node, isInput, slotIndex) {
 }
 
 function estimateSlotPosition(node, isInput, slotIndex = 0) {
-  const x = node.pos?.[0] ?? 0;
-  const y = node.pos?.[1] ?? 0;
-  const width = node.size?.[0] ?? node.width ?? 180;
-  const height = node.size?.[1] ?? node.height ?? 120;
-  const slots = isInput ? node.inputs ?? [] : node.outputs ?? [];
-  const count = Math.max(slots.length, slotIndex + 1, 1);
-  const gap = height / (count + 1);
-  return {
-    x: isInput ? x : x + width,
-    y: y + gap * (slotIndex + 1),
-  };
+  return estimateNodeSlotPosition(node, isInput, slotIndex);
 }
 
 function toPoint(value) {

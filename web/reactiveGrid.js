@@ -9,6 +9,7 @@ import {
 import { ReactiveGridField } from "./core/fieldEngine.js";
 import { ReactiveGridRenderer } from "./core/gridRenderer.js";
 import { resolveGridRestPoint } from "./core/gridStyles.js";
+import { getNodeLayout } from "./core/nodeGeometry.js";
 import { ensureThemeStylesheet, getThemeColors } from "./core/themeTokens.js";
 import {
   findFrameSnapPoint,
@@ -1078,10 +1079,7 @@ function isDirectNodeCutHit(point, node) {
     return false;
   }
 
-  const x = node.pos?.[0] ?? node.x ?? 0;
-  const y = node.pos?.[1] ?? node.y ?? 0;
-  const width = node.size?.[0] ?? node.width ?? 0;
-  const height = node.size?.[1] ?? node.height ?? 0;
+  const { x, y, width, height } = getNodeLayout(node);
   const inset = Math.max(8, Math.min(16, Math.min(width, height) * 0.12));
 
   return (

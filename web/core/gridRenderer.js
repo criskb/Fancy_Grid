@@ -248,11 +248,13 @@ export class ReactiveGridRenderer {
     const nodeGlow = settings.nodeGlow ?? 1;
     const nodeStrength = nodeInfluence * nodeGlow;
     const nodeColorStrength = this._segmentNodeColorInfluence(a, b) * nodeGlow;
+    const visibility = this._segmentVisibility(a, b);
     const alpha =
       (nodeStrength * this._getLineAlpha(settings, style) * 1.8 +
         linkInfluence * 0.22 +
         pointerInfluence * 0.12) *
-      this._getHighlightScale(style);
+      this._getHighlightScale(style) *
+      visibility;
 
     if (alpha <= 0.012) {
       return;
@@ -368,11 +370,12 @@ export class ReactiveGridRenderer {
         continue;
       }
 
+      const visibility = this._pointVisibility(point);
       const nodeInfluence = point.nodeVisualInfluence ?? point.nodeInfluence;
       const nodeStrength = nodeInfluence * 0.5 * (settings.nodeGlow ?? 1);
       const nodeColorStrength = (point.nodeColorInfluence ?? 0) * 0.5 * (settings.nodeGlow ?? 1);
       const strength =
-        Math.max(nodeStrength, point.linkInfluence, point.pointerInfluence * 0.8) * highlightScale;
+        Math.max(nodeStrength, point.linkInfluence, point.pointerInfluence * 0.8) * highlightScale * visibility;
       if (strength <= 0.025) {
         continue;
       }
