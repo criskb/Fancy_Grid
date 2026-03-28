@@ -26,7 +26,8 @@ export const DEFAULT_GRID_SETTINGS = Object.freeze({
   linkRadius: 148,
   linkGlow: 1,
   nodeGlow: 1,
-  colorGlow: false,
+  colorGlow: "off",
+  colorGlowStrength: 1,
   pointerRadius: 120,
   pointerStrength: 0.12,
   highlightColor: THEME_COLOR_FALLBACKS.highlightColor,
@@ -92,6 +93,14 @@ export const WORKFLOW_RUN_STYLE_OPTIONS = Object.freeze([
   Object.freeze({ text: "Scan Sweep", value: "scan-sweep" }),
 ]);
 
+export const COLOR_GLOW_MODE_OPTIONS = Object.freeze([
+  Object.freeze({ text: "Off", value: "off" }),
+  Object.freeze({ text: "Tint Cast", value: "tint-cast" }),
+  Object.freeze({ text: "Bloom Glow", value: "bloom" }),
+  Object.freeze({ text: "Neon Edge", value: "neon" }),
+  Object.freeze({ text: "Aura Only", value: "aura" }),
+]);
+
 export { GRID_STYLE_OPTIONS } from "./gridStyles.js";
 
 export function getPerformanceProfile(mode) {
@@ -99,8 +108,35 @@ export function getPerformanceProfile(mode) {
 }
 
 export function mergeSettings(base = DEFAULT_GRID_SETTINGS, patch = {}) {
-  return {
+  const merged = {
     ...base,
     ...patch,
   };
+
+  return {
+    ...merged,
+    colorGlow: normalizeColorGlowMode(merged.colorGlow),
+    colorGlowStrength: normalizeColorGlowStrength(merged.colorGlowStrength),
+  };
+}
+
+export function normalizeColorGlowMode(value) {
+  if (value === true) {
+    return "bloom";
+  }
+
+  if (value === false || value == null || value === "") {
+    return "off";
+  }
+
+  return COLOR_GLOW_MODE_OPTIONS.some((option) => option.value === value) ? value : DEFAULT_GRID_SETTINGS.colorGlow;
+}
+
+export function normalizeColorGlowStrength(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return DEFAULT_GRID_SETTINGS.colorGlowStrength;
+  }
+
+  return Math.min(Math.max(numeric, 0), 2);
 }

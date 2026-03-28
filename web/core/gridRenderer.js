@@ -277,6 +277,11 @@ export class ReactiveGridRenderer {
         : nodeColorStrength > 0.018
           ? nodeTint
           : settings.lineColor;
+    const colorGlowMode = this._getColorGlowMode(settings);
+    const displayTint =
+      colorGlowMode !== "tint-cast" && nodeColorStrength > 0.018 && linkInfluence <= 0.02 && pointerInfluence <= nodeStrength
+        ? settings.lineColor
+        : tint;
     const lineWidth =
       this._getLineWidth(settings, style) + linkInfluence * 0.8 + pointerInfluence * 0.35;
 
@@ -284,15 +289,16 @@ export class ReactiveGridRenderer {
       const glowStrength = Math.max(linkInfluence * Math.max(settings.linkGlow ?? 1, 0.3), nodeStrength, pointerInfluence);
       this._strokeGlowSegment(context, a, b, coordinateSpace, {
         tint,
-        alpha: Math.min(0.34, alpha * (0.18 + glowStrength * 0.28)),
-        lineWidth: lineWidth + 2.4 + glowStrength * 3.2,
+        alpha: Math.min(0.42, alpha * (0.18 + glowStrength * 0.28) * this._getColorGlowStrength(settings)),
+        lineWidth: lineWidth + 2.4 + glowStrength * 3.2 * this._getColorGlowWidthScale(settings),
+        mode: colorGlowMode,
       });
     }
 
     context.beginPath();
     context.moveTo(this._x(a, coordinateSpace), this._y(a, coordinateSpace));
     context.lineTo(this._x(b, coordinateSpace), this._y(b, coordinateSpace));
-    context.strokeStyle = rgba(tint, alpha);
+    context.strokeStyle = rgba(displayTint, alpha);
     context.lineWidth = lineWidth;
     context.stroke();
   }
@@ -395,6 +401,11 @@ export class ReactiveGridRenderer {
           : nodeColorStrength > 0.018
             ? point.nodeColor ?? settings.dotColor
             : settings.dotColor;
+      const colorGlowMode = this._getColorGlowMode(settings);
+      const displayTint =
+        colorGlowMode !== "tint-cast" && nodeColorStrength > 0.018 && point.linkInfluence <= 0.02 && point.pointerInfluence <= nodeStrength
+          ? settings.dotColor
+          : tint;
       const x = this._x(point, coordinateSpace);
       const y = this._y(point, coordinateSpace);
 
@@ -409,15 +420,16 @@ export class ReactiveGridRenderer {
           context,
           x,
           y,
-          dotRadius + strength * 3,
+          dotRadius + strength * 3 * this._getColorGlowWidthScale(settings),
           tint,
-          Math.min(0.3, strength * 0.24 * glowScale)
+          Math.min(0.36, strength * 0.24 * glowScale * this._getColorGlowStrength(settings)),
+          colorGlowMode
         );
       }
 
       context.beginPath();
       context.arc(x, y, dotRadius + strength * 1.4, 0, Math.PI * 2);
-      context.fillStyle = rgba(tint, strength * 0.6);
+      context.fillStyle = rgba(displayTint, strength * 0.6);
       context.fill();
     }
   }
@@ -451,6 +463,8 @@ export class ReactiveGridRenderer {
   }
 
   _drawConnectionLines(context, links, settings) {
+    const colorGlowMode = this._getColorGlowMode(settings);
+
     for (const link of links) {
       const tint = link.active ? settings.highlightColor : settings.linkIdleColor;
       const alpha = link.active ? 0.92 : 0.28;
@@ -460,8 +474,9 @@ export class ReactiveGridRenderer {
         const glowWeight = Math.max(settings.linkGlow ?? 1, 0.35) * (link.active ? 1 : 0.72);
         this._strokeConnectionGlow(context, link, {
           tint,
-          alpha: Math.min(0.28, alpha * (0.24 + glowWeight * 0.16)),
-          lineWidth: lineWidth + 2 + glowWeight * 2.4,
+          alpha: Math.min(0.36, alpha * (0.24 + glowWeight * 0.16) * this._getColorGlowStrength(settings)),
+          lineWidth: lineWidth + 2 + glowWeight * 2.4 * this._getColorGlowWidthScale(settings),
+          mode: colorGlowMode,
         });
       }
 
@@ -653,7 +668,7 @@ export class ReactiveGridRenderer {
     context.restore();
   }
 
-  _strokeGlowSegment(context, a, b, coordinateSpace, { tint, alpha, lineWidth }) {
+  _strokeGlowSegment(context, a, b, coordinateSpace, { tint, alpha, lineWidth, mode = "tint-cast" }) {
     if (alpha <= 0.003 || lineWidth <= 0) {
       return;
     }
@@ -664,24 +679,47 @@ export class ReactiveGridRenderer {
     context.beginPath();
     context.moveTo(this._x(a, coordinateSpace), this._y(a, coordinateSpace));
     context.lineTo(this._x(b, coordinateSpace), this._y(b, coordinateSpace));
-    context.strokeStyle = rgba(tint, alpha);
-    context.lineWidth = lineWidth;
+    context.strokeStyle = rgba(tint, mode === "tint-cast" ? alpha : mode === "aura" ? alpha * 0.24 : alpha * 0.42);
+    context.lineWidth =
+      mode === "neon"
+        ? Math.max(lineWidth * 0.48, 1.2)
+        : mode === "aura"
+          ? Math.max(lineWidth * 0.82, 1.4)
+          : lineWidth;
+    if (mode === "bloom" || mode === "neon" || mode === "aura") {
+      context.globalCompositeOperation = "screen";
+      context.shadowColor = rgba(
+        tint,
+        Math.min(0.76, alpha * (mode === "neon" ? 2.2 : mode === "aura" ? 1.25 : 1.7))
+      );
+      context.shadowBlur = lineWidth * (mode === "neon" ? 3.8 : mode === "aura" ? 6.2 : 4.8);
+    }
     context.stroke();
     context.restore();
   }
 
-  _fillGlowDot(context, x, y, radius, tint, alpha) {
+  _fillGlowDot(context, x, y, radius, tint, alpha, mode = "tint-cast") {
     if (alpha <= 0.003 || radius <= 0) {
       return;
     }
 
+    context.save();
     context.beginPath();
-    context.arc(x, y, radius, 0, Math.PI * 2);
-    context.fillStyle = rgba(tint, alpha);
+    context.arc(x, y, mode === "neon" ? Math.max(radius * 0.58, 1.2) : mode === "aura" ? Math.max(radius * 0.7, 1.4) : radius, 0, Math.PI * 2);
+    context.fillStyle = rgba(tint, mode === "tint-cast" ? alpha : mode === "aura" ? alpha * 0.18 : alpha * 0.44);
+    if (mode === "bloom" || mode === "neon" || mode === "aura") {
+      context.globalCompositeOperation = "screen";
+      context.shadowColor = rgba(
+        tint,
+        Math.min(0.8, alpha * (mode === "neon" ? 2.4 : mode === "aura" ? 1.3 : 1.8))
+      );
+      context.shadowBlur = radius * (mode === "neon" ? 3.2 : mode === "aura" ? 6.4 : 4.6);
+    }
     context.fill();
+    context.restore();
   }
 
-  _strokeConnectionGlow(context, link, { tint, alpha, lineWidth }) {
+  _strokeConnectionGlow(context, link, { tint, alpha, lineWidth, mode = "tint-cast" }) {
     if (alpha <= 0.003 || lineWidth <= 0) {
       return;
     }
@@ -691,8 +729,21 @@ export class ReactiveGridRenderer {
     context.lineJoin = "round";
     context.beginPath();
     this._traceConnectionCurve(context, link);
-    context.strokeStyle = rgba(tint, alpha);
-    context.lineWidth = lineWidth;
+    context.strokeStyle = rgba(tint, mode === "tint-cast" ? alpha : mode === "aura" ? alpha * 0.24 : alpha * 0.42);
+    context.lineWidth =
+      mode === "neon"
+        ? Math.max(lineWidth * 0.5, 1.2)
+        : mode === "aura"
+          ? Math.max(lineWidth * 0.84, 1.4)
+          : lineWidth;
+    if (mode === "bloom" || mode === "neon" || mode === "aura") {
+      context.globalCompositeOperation = "screen";
+      context.shadowColor = rgba(
+        tint,
+        Math.min(0.78, alpha * (mode === "neon" ? 2.2 : mode === "aura" ? 1.25 : 1.7))
+      );
+      context.shadowBlur = lineWidth * (mode === "neon" ? 3.9 : mode === "aura" ? 6.4 : 4.9);
+    }
     context.stroke();
     context.restore();
   }
@@ -705,7 +756,26 @@ export class ReactiveGridRenderer {
 
   _shouldUseColorGlow(settings) {
     const profile = getPerformanceProfile(settings.performanceMode);
-    return Boolean(settings.colorGlow && (profile.allowColorGlow ?? true));
+    return Boolean(this._getColorGlowMode(settings) !== "off" && (profile.allowColorGlow ?? true));
+  }
+
+  _getColorGlowMode(settings) {
+    const value = settings.colorGlow;
+    if (value === true) {
+      return "bloom";
+    }
+    if (value === false || value == null) {
+      return "off";
+    }
+    return value;
+  }
+
+  _getColorGlowStrength(settings) {
+    return Math.min(Math.max(settings.colorGlowStrength ?? 1, 0), 2);
+  }
+
+  _getColorGlowWidthScale(settings) {
+    return 0.8 + this._getColorGlowStrength(settings) * 0.85;
   }
 
   _shouldDrawHighlights(frame) {

@@ -1,4 +1,5 @@
 import {
+  COLOR_GLOW_MODE_OPTIONS,
   DEFAULT_GRID_SETTINGS,
   NODE_VISUAL_FALLOFF_OPTIONS,
   mergeSettings,
@@ -78,7 +79,7 @@ const state = {
   hoveredInput: null,
   pointerWorld: { x: 0, y: 0 },
   pointerActive: false,
-  frameStats: { pointCount: 0, linkCount: 0, energy: 0 },
+  frameStats: { pointCount: 0, linkCount: 0, energy: 0, samplingStep: 1 },
   fps: 0,
   frameCounter: 0,
   lastFpsAt: performance.now(),
@@ -103,6 +104,7 @@ const CONTROL_DEFS = [
   { key: "gridVisibility", label: "Grid Visibility", min: 0, max: 1, step: 0.01 },
   { key: "linkGlow", label: "Link Glow", min: 0, max: 2, step: 0.05 },
   { key: "nodeGlow", label: "Node Glow", min: 0, max: 2, step: 0.05 },
+  { key: "colorGlowStrength", label: "Color Glow Strength", min: 0, max: 2, step: 0.05 },
   { key: "dotAlpha", label: "Dot Alpha", min: 0.2, max: 1, step: 0.01 },
   { key: "lineAlpha", label: "Line Alpha", min: 0.02, max: 0.18, step: 0.002 },
 ];
@@ -120,10 +122,7 @@ const SELECT_CONTROL_DEFS = [
   {
     key: "colorGlow",
     label: "Color Glow",
-    options: [
-      { text: "Off", value: false },
-      { text: "On", value: true },
-    ],
+    options: COLOR_GLOW_MODE_OPTIONS,
   },
   {
     key: "performanceMode",
@@ -153,6 +152,7 @@ function buildStats() {
   statsRoot.innerHTML = `
     <div class="demo-stat"><div class="demo-stat__label">Points</div><div class="demo-stat__value" data-stat="points">0</div></div>
     <div class="demo-stat"><div class="demo-stat__label">Zoom</div><div class="demo-stat__value" data-stat="zoom">1.00x</div></div>
+    <div class="demo-stat"><div class="demo-stat__label">LOD</div><div class="demo-stat__value" data-stat="lod">1x</div></div>
     <div class="demo-stat"><div class="demo-stat__label">Links</div><div class="demo-stat__value" data-stat="links">0</div></div>
     <div class="demo-stat"><div class="demo-stat__label">FPS</div><div class="demo-stat__value" data-stat="fps">0</div></div>
   `;
@@ -432,7 +432,10 @@ function loop(timestamp) {
     drawConnectionPaths: true,
   });
 
-  state.frameStats = frame.stats;
+  state.frameStats = {
+    ...frame.stats,
+    samplingStep: frame.samplingStep ?? 1,
+  };
   state.frameCounter += 1;
   if (timestamp - state.lastFpsAt >= 400) {
     state.fps = Math.round((state.frameCounter * 1000) / (timestamp - state.lastFpsAt));
@@ -465,6 +468,7 @@ function getConnectionSegments() {
 function updateStats() {
   statsRoot.querySelector('[data-stat="points"]').textContent = String(state.frameStats.pointCount);
   statsRoot.querySelector('[data-stat="zoom"]').textContent = `${state.viewport.zoom.toFixed(2)}x`;
+  statsRoot.querySelector('[data-stat="lod"]').textContent = `${state.frameStats.samplingStep ?? 1}x`;
   statsRoot.querySelector('[data-stat="links"]').textContent = String(
     state.frameStats.linkCount + (state.activeCable ? 1 : 0)
   );

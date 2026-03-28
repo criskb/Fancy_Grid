@@ -2,11 +2,14 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import {
   DEFAULT_GRID_SETTINGS,
+  COLOR_GLOW_MODE_OPTIONS,
   GRID_STYLE_OPTIONS,
   NODE_VISUAL_FALLOFF_OPTIONS,
   WORKFLOW_RUN_STYLE_OPTIONS,
   getPerformanceProfile,
   mergeSettings,
+  normalizeColorGlowMode,
+  normalizeColorGlowStrength,
 } from "./core/defaultSettings.js";
 import { ReactiveGridField } from "./core/fieldEngine.js";
 import { ReactiveGridRenderer } from "./core/gridRenderer.js";
@@ -50,6 +53,7 @@ const SETTING_IDS = {
   linkGlow: "FancyGrid.LinkGlow",
   nodeGlow: "FancyGrid.NodeGlow",
   colorGlow: "FancyGrid.ColorGlow",
+  colorGlowStrength: "FancyGrid.ColorGlowStrength",
   dotAlpha: "FancyGrid.DotAlpha",
   lineAlpha: "FancyGrid.LineAlpha",
   performanceMode: "FancyGrid.PerformanceMode",
@@ -146,7 +150,12 @@ class FancyGridController {
       ),
       linkGlow: getSettingValue(this.app, SETTING_IDS.linkGlow, DEFAULT_GRID_SETTINGS.linkGlow),
       nodeGlow: getSettingValue(this.app, SETTING_IDS.nodeGlow, DEFAULT_GRID_SETTINGS.nodeGlow),
-      colorGlow: getSettingValue(this.app, SETTING_IDS.colorGlow, DEFAULT_GRID_SETTINGS.colorGlow),
+      colorGlow: normalizeColorGlowMode(
+        getSettingValue(this.app, SETTING_IDS.colorGlow, DEFAULT_GRID_SETTINGS.colorGlow)
+      ),
+      colorGlowStrength: normalizeColorGlowStrength(
+        getSettingValue(this.app, SETTING_IDS.colorGlowStrength, DEFAULT_GRID_SETTINGS.colorGlowStrength)
+      ),
       dotAlpha: getSettingValue(this.app, SETTING_IDS.dotAlpha, DEFAULT_GRID_SETTINGS.dotAlpha),
       lineAlpha: getSettingValue(this.app, SETTING_IDS.lineAlpha, DEFAULT_GRID_SETTINGS.lineAlpha),
       performanceMode: getSettingValue(
@@ -1408,12 +1417,23 @@ app.registerExtension({
     },
     {
       id: SETTING_IDS.colorGlow,
-      name: "Color glow",
-      type: "boolean",
+      name: "Color glow mode",
+      type: "combo",
       defaultValue: DEFAULT_GRID_SETTINGS.colorGlow,
+      options: COLOR_GLOW_MODE_OPTIONS,
       category: ["Fancy Grid", "Look", "Color Glow"],
-      tooltip: "Adds a soft colored aura around highlights and active cable previews.",
+      tooltip: "Choose whether node and link colors tint the grid directly or render as a true glow aura.",
       onChange: createSettingChangeHandler(SETTING_IDS.colorGlow),
+    },
+    {
+      id: SETTING_IDS.colorGlowStrength,
+      name: "Color glow strength",
+      type: "slider",
+      attrs: { min: 0, max: 2, step: 0.05 },
+      defaultValue: DEFAULT_GRID_SETTINGS.colorGlowStrength,
+      category: ["Fancy Grid", "Look", "Color Glow"],
+      tooltip: "Controls how strong the colored aura appears for the current glow mode.",
+      onChange: createSettingChangeHandler(SETTING_IDS.colorGlowStrength),
     },
     {
       id: SETTING_IDS.dotAlpha,

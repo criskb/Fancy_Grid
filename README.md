@@ -27,7 +27,7 @@ The result is a cleaner canvas with more spatial feedback, without adding backen
 - Frontend-only ComfyUI extension with `WEB_DIRECTORY = "./web"`
 - Reactive dot-and-line background rendered behind nodes
 - Multiple dynamic grid styles with a `Grid Style` setting
-- Optional `Color glow` aura pass for highlighted colors
+- Multiple `Color glow` modes, from tint cast to bloom, neon, and aura-only
 - Sticky reroute snapping to grid points
 - Shift-drag cut gesture for slicing links and nodes
 - Standalone demo app for tuning the field engine in isolation
@@ -52,7 +52,8 @@ You can switch styles from:
 Key controls currently exposed in ComfyUI:
 
 - `Grid Style` to switch between the live background variants
-- `Color glow` to add a soft aura around highlighted colors and cable previews
+- `Color glow mode` to choose between `Off`, `Tint Cast`, `Bloom Glow`, `Neon Edge`, and `Aura Only`
+- `Color glow strength` to control how strong and wide the glow aura appears
 - `Connection glow` and `Node glow` to shape how strongly links and nearby nodes light the field
 - `Grid visibility`, `Dot brightness`, and `Line brightness` to tune the base grid density and contrast
 - motion and field controls like spacing, radius, spring, damping, node influence, and connection influence
