@@ -3,6 +3,8 @@ import { THEME_COLOR_FALLBACKS } from "./themeTokens.js";
 export const DEFAULT_GRID_SETTINGS = Object.freeze({
   enabled: true,
   gridStyle: "default",
+  workflowRunAnimation: false,
+  workflowRunStyle: "pulse-trail",
   spacing: 30,
   radius: 220,
   strength: 0.2,
@@ -82,6 +84,12 @@ export const PERFORMANCE_PROFILES = Object.freeze({
 export const NODE_VISUAL_FALLOFF_OPTIONS = Object.freeze([
   Object.freeze({ text: "Soft", value: "soft" }),
   Object.freeze({ text: "Edge Fade", value: "edge" }),
+]);
+
+export const WORKFLOW_RUN_STYLE_OPTIONS = Object.freeze([
+  Object.freeze({ text: "Pulse Trail", value: "pulse-trail" }),
+  Object.freeze({ text: "Comet Flow", value: "comet-flow" }),
+  Object.freeze({ text: "Scan Sweep", value: "scan-sweep" }),
 ]);
 
 export { GRID_STYLE_OPTIONS } from "./gridStyles.js";

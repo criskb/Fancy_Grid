@@ -83,6 +83,9 @@ export function extractLinks(app) {
       }).map((segment) => ({
         ...segment,
         color,
+        originId: link.origin_id,
+        targetId: link.target_id,
+        segmentIndex: readSegmentIndex(segment.id),
       }))
     );
   }
@@ -100,6 +103,9 @@ export function extractLinks(app) {
       }).map((segment) => ({
         ...segment,
         color,
+        originId: link.origin_id,
+        targetId: link.target_id,
+        segmentIndex: readSegmentIndex(segment.id),
       }))
     );
   }
@@ -367,4 +373,14 @@ function toPoint(value) {
   }
 
   return null;
+}
+
+function readSegmentIndex(id) {
+  if (typeof id !== "string") {
+    return 0;
+  }
+
+  const tail = id.split(":").at(-1);
+  const index = Number.parseInt(tail ?? "", 10);
+  return Number.isFinite(index) ? index : 0;
 }

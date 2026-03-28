@@ -50,6 +50,10 @@ export class ReactiveGridRenderer {
       this._drawHighlightedDots(context, frame.points, settings, "screen");
     }
 
+    if (options.workflowRunState?.active) {
+      this._drawWorkflowRunLines(context, options.workflowRunState, settings, "screen");
+    }
+
     if (frame.screenNodes.length) {
       this._maskNodeCards(context, frame.screenNodes, settings);
     }
@@ -78,6 +82,10 @@ export class ReactiveGridRenderer {
 
     if (!this._shouldSkipHighlightDots(frame, settings)) {
       this._drawHighlightedDots(context, frame.points, settings, "world");
+    }
+
+    if (options.workflowRunState?.active) {
+      this._drawWorkflowRunLines(context, options.workflowRunState, settings, "world");
     }
   }
 
@@ -465,6 +473,186 @@ export class ReactiveGridRenderer {
     }
   }
 
+  _drawWorkflowRunLines(context, workflowRunState, settings, coordinateSpace) {
+    const links = workflowRunState?.links;
+    if (!Array.isArray(links) || !links.length) {
+      return;
+    }
+
+    const elapsed = Math.max((workflowRunState.now - workflowRunState.startedAt) * 0.001, 0);
+    const style = workflowRunState.style ?? settings.workflowRunStyle ?? "pulse-trail";
+    const baseWidth = 1.45 + (settings.lineWidth ?? 1) * 0.9;
+
+    for (const link of links) {
+      if (!link || link.marker) {
+        continue;
+      }
+
+      this._strokeLinkSegment(context, link, coordinateSpace, {
+        tint: settings.highlightColor,
+        alpha: 0.22,
+        lineWidth: baseWidth + 0.8,
+      });
+
+      switch (style) {
+        case "comet-flow":
+          this._drawWorkflowComet(context, link, coordinateSpace, settings, elapsed, baseWidth);
+          break;
+        case "scan-sweep":
+          this._drawWorkflowScan(context, link, coordinateSpace, settings, elapsed, baseWidth);
+          break;
+        default:
+          this._drawWorkflowPulse(context, link, coordinateSpace, settings, elapsed, baseWidth);
+          break;
+      }
+    }
+  }
+
+  _drawWorkflowPulse(context, link, coordinateSpace, settings, elapsed, baseWidth) {
+    const head = mod01(elapsed * 1.8 - (link.segmentIndex ?? 0) * 0.18);
+    this._strokeAnimatedLinkTrail(context, link, coordinateSpace, {
+      tint: settings.highlightColor,
+      glowTint: settings.accentColor,
+      alpha: 0.88,
+      glowAlpha: 0.22,
+      lineWidth: baseWidth + 1.2,
+      glowWidth: baseWidth + 4.2,
+      head,
+      length: 0.42,
+    });
+  }
+
+  _drawWorkflowComet(context, link, coordinateSpace, settings, elapsed, baseWidth) {
+    const head = mod01(elapsed * 2.35 - (link.segmentIndex ?? 0) * 0.22);
+    this._strokeAnimatedLinkTrail(context, link, coordinateSpace, {
+      tint: settings.accentColor,
+      glowTint: settings.highlightColor,
+      alpha: 0.96,
+      glowAlpha: 0.3,
+      lineWidth: baseWidth + 1.8,
+      glowWidth: baseWidth + 5.8,
+      head,
+      length: 0.62,
+    });
+  }
+
+  _drawWorkflowScan(context, link, coordinateSpace, settings, elapsed, baseWidth) {
+    const primaryHead = mod01(elapsed * 2.8 - (link.segmentIndex ?? 0) * 0.16);
+    const secondaryHead = mod01(primaryHead + 0.48);
+
+    this._strokeAnimatedLinkTrail(context, link, coordinateSpace, {
+      tint: settings.highlightColor,
+      glowTint: settings.highlightColor,
+      alpha: 0.76,
+      glowAlpha: 0.16,
+      lineWidth: baseWidth + 0.9,
+      glowWidth: baseWidth + 3.2,
+      head: primaryHead,
+      length: 0.18,
+    });
+    this._strokeAnimatedLinkTrail(context, link, coordinateSpace, {
+      tint: settings.accentColor,
+      glowTint: settings.accentColor,
+      alpha: 0.72,
+      glowAlpha: 0.14,
+      lineWidth: baseWidth + 0.6,
+      glowWidth: baseWidth + 2.8,
+      head: secondaryHead,
+      length: 0.14,
+    });
+  }
+
+  _strokeAnimatedLinkTrail(
+    context,
+    link,
+    coordinateSpace,
+    { tint, glowTint = tint, alpha, glowAlpha, lineWidth, glowWidth, head, length }
+  ) {
+    const start = head - Math.max(length, 0.02);
+    if (glowAlpha > 0.003 && glowWidth > 0) {
+      this._strokePartialLinkSegment(context, link, coordinateSpace, {
+        tint: glowTint,
+        alpha: glowAlpha,
+        lineWidth: glowWidth,
+        start,
+        end: head,
+      });
+    }
+
+    this._strokePartialLinkSegment(context, link, coordinateSpace, {
+      tint,
+      alpha,
+      lineWidth,
+      start,
+      end: head,
+    });
+  }
+
+  _strokePartialLinkSegment(context, link, coordinateSpace, { tint, alpha, lineWidth, start, end }) {
+    if (alpha <= 0.003 || lineWidth <= 0) {
+      return;
+    }
+
+    const clampedStart = Math.max(start, 0);
+    const clampedEnd = Math.min(end, 1);
+    if (start < 0) {
+      this._strokePartialLinkSegment(context, link, coordinateSpace, {
+        tint,
+        alpha,
+        lineWidth,
+        start: 1 + start,
+        end: 1,
+      });
+    }
+
+    if (end > 1) {
+      this._strokePartialLinkSegment(context, link, coordinateSpace, {
+        tint,
+        alpha,
+        lineWidth,
+        start: 0,
+        end: end - 1,
+      });
+    }
+
+    if (clampedEnd - clampedStart <= 0.01) {
+      return;
+    }
+
+    const startPoint = interpolateLinkSegment(link, coordinateSpace, clampedStart);
+    const endPoint = interpolateLinkSegment(link, coordinateSpace, clampedEnd);
+    this._strokeLine(context, startPoint, endPoint, { tint, alpha, lineWidth });
+  }
+
+  _strokeLinkSegment(context, link, coordinateSpace, { tint, alpha, lineWidth }) {
+    const start = {
+      x: coordinateSpace === "world" ? link.x1 : link.screenX1 ?? link.x1,
+      y: coordinateSpace === "world" ? link.y1 : link.screenY1 ?? link.y1,
+    };
+    const end = {
+      x: coordinateSpace === "world" ? link.x2 : link.screenX2 ?? link.x2,
+      y: coordinateSpace === "world" ? link.y2 : link.screenY2 ?? link.y2,
+    };
+    this._strokeLine(context, start, end, { tint, alpha, lineWidth });
+  }
+
+  _strokeLine(context, start, end, { tint, alpha, lineWidth }) {
+    if (alpha <= 0.003 || lineWidth <= 0) {
+      return;
+    }
+
+    context.save();
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.beginPath();
+    context.moveTo(start.x, start.y);
+    context.lineTo(end.x, end.y);
+    context.strokeStyle = rgba(tint, alpha);
+    context.lineWidth = lineWidth;
+    context.stroke();
+    context.restore();
+  }
+
   _strokeGlowSegment(context, a, b, coordinateSpace, { tint, alpha, lineWidth }) {
     if (alpha <= 0.003 || lineWidth <= 0) {
       return;
@@ -526,12 +714,17 @@ export class ReactiveGridRenderer {
 
   _shouldSkipBaseDots(frame, settings) {
     const profile = getPerformanceProfile(settings.performanceMode);
-    return Boolean(!frame?.hasDirectInteraction && (profile.idleSkipBaseDots ?? false));
+    return Boolean(
+      frame?.detailLevel?.skipBaseDots || (!frame?.hasDirectInteraction && (profile.idleSkipBaseDots ?? false))
+    );
   }
 
   _shouldSkipHighlightDots(frame, settings) {
     const profile = getPerformanceProfile(settings.performanceMode);
-    return Boolean(!frame?.hasDirectInteraction && (profile.idleSkipHighlightDots ?? false));
+    return Boolean(
+      frame?.detailLevel?.skipHighlightDots ||
+        (!frame?.hasDirectInteraction && (profile.idleSkipHighlightDots ?? false))
+    );
   }
 
   _maskNodeCards(context, nodes, settings) {
@@ -561,4 +754,21 @@ export class ReactiveGridRenderer {
   _y(point, coordinateSpace) {
     return coordinateSpace === "world" ? point.y : point.screenY;
   }
+}
+
+function interpolateLinkSegment(link, coordinateSpace, fraction) {
+  const startX = coordinateSpace === "world" ? link.x1 : link.screenX1 ?? link.x1;
+  const startY = coordinateSpace === "world" ? link.y1 : link.screenY1 ?? link.y1;
+  const endX = coordinateSpace === "world" ? link.x2 : link.screenX2 ?? link.x2;
+  const endY = coordinateSpace === "world" ? link.y2 : link.screenY2 ?? link.y2;
+  const t = Math.min(Math.max(fraction, 0), 1);
+
+  return {
+    x: startX + (endX - startX) * t,
+    y: startY + (endY - startY) * t,
+  };
+}
+
+function mod01(value) {
+  return ((value % 1) + 1) % 1;
 }

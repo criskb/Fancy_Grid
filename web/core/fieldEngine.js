@@ -1,5 +1,6 @@
 import { formatRgbColor, parseColorString } from "./colorUtils.js";
 import { DEFAULT_GRID_SETTINGS, getPerformanceProfile, mergeSettings } from "./defaultSettings.js";
+import { computeGridDetailLevel } from "./detailLevel.js";
 import { getGridStyleDefinition, resolveGridRestPoint } from "./gridStyles.js";
 import {
   buildWorldBounds,
@@ -61,8 +62,14 @@ export class ReactiveGridField {
     const profile = getPerformanceProfile(settings.performanceMode);
     const worldBounds = buildWorldBounds(viewport);
     const hasDirectInteraction = Boolean(isInteracting || pointer?.active || activeCable);
-    const gridStep = hasDirectInteraction ? 1 : Math.max(profile.idleGridStep ?? 1, 1);
-    const cellMargin = settings.spacing * Math.max(profile.viewMarginCells ?? settings.viewMarginCells, 0);
+    const detailLevel = computeGridDetailLevel({
+      viewport,
+      settings,
+      profile,
+      hasDirectInteraction,
+    });
+    const gridStep = detailLevel.samplingStep;
+    const cellMargin = settings.spacing * detailLevel.effectiveViewMarginCells;
     const simulationBounds = expandBounds(worldBounds, cellMargin);
     const influenceBounds = expandBounds(worldBounds, profile.viewportPadding / Math.max(viewport.zoom, 0.001));
     const visibleNodes = this._prepareNodes(nodes, influenceBounds, profile.maxNodes, settings);
@@ -169,6 +176,7 @@ export class ReactiveGridField {
       rows,
       cols,
       samplingStep: gridStep,
+      detailLevel,
       hasDirectInteraction,
       points: framePoints,
       worldBounds,
@@ -192,6 +200,7 @@ export class ReactiveGridField {
       rows: 0,
       cols: 0,
       samplingStep: 1,
+      detailLevel: null,
       hasDirectInteraction: false,
       points: [],
       worldBounds: null,

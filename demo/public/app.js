@@ -94,7 +94,7 @@ const renderer = new ReactiveGridRenderer({
 const nodeElements = new Map();
 
 const CONTROL_DEFS = [
-  { key: "spacing", label: "Spacing", min: 18, max: 42, step: 1 },
+  { key: "spacing", label: "Spacing", min: 18, max: 100, step: 1 },
   { key: "radius", label: "Radius", min: 120, max: 320, step: 2 },
   { key: "strength", label: "Strength", min: 0.05, max: 0.4, step: 0.01 },
   { key: "connectionInfluence", label: "Connection Pull", min: 0, max: 0.5, step: 0.01 },

@@ -1,8 +1,10 @@
 import { app } from "../../scripts/app.js";
+import { api } from "../../scripts/api.js";
 import {
   DEFAULT_GRID_SETTINGS,
   GRID_STYLE_OPTIONS,
   NODE_VISUAL_FALLOFF_OPTIONS,
+  WORKFLOW_RUN_STYLE_OPTIONS,
   getPerformanceProfile,
   mergeSettings,
 } from "./core/defaultSettings.js";
@@ -35,6 +37,8 @@ const CUT_MIN_DISTANCE = 4;
 const SETTING_IDS = {
   enabled: "FancyGrid.Enabled",
   gridStyle: "FancyGrid.GridStyle",
+  workflowRunAnimation: "FancyGrid.WorkflowRunAnimation",
+  workflowRunStyle: "FancyGrid.WorkflowRunStyle",
   spacing: "FancyGrid.Spacing",
   radius: "FancyGrid.Radius",
   strength: "FancyGrid.Strength",
@@ -80,6 +84,11 @@ class FancyGridController {
     this.cutFades = [];
     this.nativePreviewColorSnapshot = null;
     this.draggedStickyReroutes = new Set();
+    this.executionState = {
+      active: false,
+      nodeId: null,
+      startedAt: 0,
+    };
   }
 
   async start() {
@@ -89,6 +98,7 @@ class FancyGridController {
     this.installCanvasHooks();
     this.installPointerListeners();
     this.installLinkConnectorListeners();
+    this.installExecutionListeners();
     this.refreshSettings();
   }
 
@@ -104,6 +114,16 @@ class FancyGridController {
       ...this.getThemeSettingValues(themeColors),
       enabled: getSettingValue(this.app, SETTING_IDS.enabled, DEFAULT_GRID_SETTINGS.enabled),
       gridStyle: getSettingValue(this.app, SETTING_IDS.gridStyle, DEFAULT_GRID_SETTINGS.gridStyle),
+      workflowRunAnimation: getSettingValue(
+        this.app,
+        SETTING_IDS.workflowRunAnimation,
+        DEFAULT_GRID_SETTINGS.workflowRunAnimation
+      ),
+      workflowRunStyle: getSettingValue(
+        this.app,
+        SETTING_IDS.workflowRunStyle,
+        DEFAULT_GRID_SETTINGS.workflowRunStyle
+      ),
       spacing: getSettingValue(this.app, SETTING_IDS.spacing, DEFAULT_GRID_SETTINGS.spacing),
       radius: getSettingValue(this.app, SETTING_IDS.radius, DEFAULT_GRID_SETTINGS.radius),
       strength: getSettingValue(this.app, SETTING_IDS.strength, DEFAULT_GRID_SETTINGS.strength),
@@ -262,6 +282,41 @@ class FancyGridController {
     connector.events.addEventListener("reset", this.handleConnectorReset);
     this.linkConnectorListenersInstalled = true;
   }
+
+  installExecutionListeners() {
+    api.addEventListener("execution_start", this.handleExecutionStarted);
+    api.addEventListener("executing", this.handleExecutingMessage);
+    api.addEventListener("execution_success", this.handleExecutionFinished);
+    api.addEventListener("execution_error", this.handleExecutionFinished);
+    api.addEventListener("execution_interrupted", this.handleExecutionFinished);
+  }
+
+  handleExecutionStarted = () => {
+    this.executionState.active = true;
+    this.executionState.nodeId = null;
+    this.executionState.startedAt = performance.now();
+    this.requestRedraw();
+  };
+
+  handleExecutingMessage = (event) => {
+    const nextNodeId = extractExecutingNodeId(event);
+    if (nextNodeId == null) {
+      this.handleExecutionFinished();
+      return;
+    }
+
+    this.executionState.active = true;
+    this.executionState.nodeId = nextNodeId;
+    this.executionState.startedAt = performance.now();
+    this.requestRedraw();
+  };
+
+  handleExecutionFinished = () => {
+    this.executionState.active = false;
+    this.executionState.nodeId = null;
+    this.executionState.startedAt = 0;
+    this.requestRedraw();
+  };
 
   handlePointerMove = (event) => {
     if (!this.settings.enabled) {
@@ -884,11 +939,12 @@ class FancyGridController {
     this.applyNativePreviewLinkColor(activeCable?.color ?? null);
     const nodes = extractNodes(this.app);
     const links = extractLinks(this.app);
+    const workflowRunState = this.buildWorkflowRunState(links, now);
     const isInteracting = isCanvasInteracting(this.app);
     const pointerOverNode = this.pointer.active && isPointerOverNode(this.pointer, nodes);
     const performanceProfile = getPerformanceProfile(this.settings.performanceMode);
     const hasDirectActivity = Boolean(
-      isInteracting || activeCable || this.cutGesture || (this.pointer.active && !pointerOverNode)
+      isInteracting || activeCable || this.cutGesture || workflowRunState?.active || (this.pointer.active && !pointerOverNode)
     );
 
     if (isInteracting || this.cutGesture) {
@@ -918,6 +974,7 @@ class FancyGridController {
     this.renderer.renderGraph(frame, {
       context: ctx,
       drawBackground: false,
+      workflowRunState,
     });
 
     if (this.snapPreview) {
@@ -931,9 +988,45 @@ class FancyGridController {
     this.syncRedrawLoop(
       frame.active ||
         now - this.lastInteractionAt < 180 ||
+        Boolean(workflowRunState?.active) ||
         Boolean(this.cutGesture) ||
         this.cutFades.length > 0
     );
+  }
+
+  buildWorkflowRunState(links, now = performance.now()) {
+    if (!this.settings.workflowRunAnimation || !this.executionState.active) {
+      return null;
+    }
+
+    const visibleLinks = links.filter((link) => !link?.marker);
+    if (!visibleLinks.length) {
+      return null;
+    }
+
+    const matchedLinks =
+      this.executionState.nodeId == null
+        ? []
+        : visibleLinks.filter(
+            (link) =>
+              matchesExecutionNodeId(link.originId, this.executionState.nodeId) ||
+              matchesExecutionNodeId(link.targetId, this.executionState.nodeId)
+          );
+
+    const activeLinks = matchedLinks.length ? matchedLinks : visibleLinks;
+
+    if (!activeLinks.length) {
+      return null;
+    }
+
+    return {
+      active: true,
+      usesFallbackScope: matchedLinks.length === 0,
+      style: this.settings.workflowRunStyle,
+      startedAt: this.executionState.startedAt || now,
+      now,
+      links: activeLinks,
+    };
   }
 
   requestRedraw() {
@@ -1206,10 +1299,28 @@ app.registerExtension({
       onChange: createSettingChangeHandler(SETTING_IDS.gridStyle),
     },
     {
+      id: SETTING_IDS.workflowRunAnimation,
+      name: "Workflow run animation",
+      type: "boolean",
+      defaultValue: DEFAULT_GRID_SETTINGS.workflowRunAnimation,
+      category: ["Fancy Grid", "Workflow", "Run Animation"],
+      tooltip: "Animates links touching the node currently executing in the workflow.",
+      onChange: createSettingChangeHandler(SETTING_IDS.workflowRunAnimation),
+    },
+    {
+      id: SETTING_IDS.workflowRunStyle,
+      name: "Run line style",
+      type: "combo",
+      defaultValue: DEFAULT_GRID_SETTINGS.workflowRunStyle,
+      options: WORKFLOW_RUN_STYLE_OPTIONS,
+      category: ["Fancy Grid", "Workflow", "Run Style"],
+      onChange: createSettingChangeHandler(SETTING_IDS.workflowRunStyle),
+    },
+    {
       id: SETTING_IDS.spacing,
       name: "Grid spacing",
       type: "slider",
-      attrs: { min: 18, max: 42, step: 1 },
+      attrs: { min: 18, max: 100, step: 1 },
       defaultValue: DEFAULT_GRID_SETTINGS.spacing,
       category: ["Fancy Grid", "Field", "Spacing"],
       onChange: createSettingChangeHandler(SETTING_IDS.spacing),
@@ -1341,3 +1452,38 @@ app.registerExtension({
     await runtime.controller.start();
   },
 });
+
+function matchesExecutionNodeId(candidateId, executingNodeId) {
+  if (candidateId == null || executingNodeId == null) {
+    return false;
+  }
+
+  if (String(candidateId) === String(executingNodeId)) {
+    return true;
+  }
+
+  const candidateNumber = Number.parseInt(String(candidateId), 10);
+  const executingNumber = Number.parseInt(String(executingNodeId), 10);
+  return Number.isFinite(candidateNumber) && Number.isFinite(executingNumber) && candidateNumber === executingNumber;
+}
+
+function extractExecutingNodeId(event) {
+  const detail = event?.detail;
+  const candidates = [
+    detail?.node,
+    detail?.data?.node,
+    detail?.detail?.node,
+    detail?.executing?.node,
+    event?.node,
+    event?.data?.node,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate == null || candidate === "") {
+      continue;
+    }
+    return candidate;
+  }
+
+  return null;
+}
