@@ -2,6 +2,7 @@ import { THEME_COLOR_FALLBACKS } from "./themeTokens.js";
 
 export const DEFAULT_GRID_SETTINGS = Object.freeze({
   enabled: true,
+  snapNodesToGrid: false,
   gridStyle: "default",
   workflowRunAnimation: false,
   workflowRunStyle: "pulse-trail",

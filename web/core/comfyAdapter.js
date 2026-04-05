@@ -1,5 +1,6 @@
 import { buildLinkSegments, getLinkRenderMode } from "./linkGeometry.js";
-import { estimateNodeSlotPosition, getNodeLayout } from "./nodeGeometry.js";
+import { getCustomNodeLayout } from "./customNodeLayouts.js";
+import { estimateNodeSlotPosition, getNodeLayout, resolveNodeSlotPosition } from "./nodeGeometry.js";
 
 export async function waitForCanvas(app, timeoutMs = 10000) {
   const startedAt = performance.now();
@@ -21,6 +22,19 @@ export function getSettingValue(app, id, fallback) {
     app?.extensionManager?.setting?.get?.(id) ??
     app?.ui?.settings?.getSettingValue?.(id);
   return value ?? fallback;
+}
+
+export async function setSettingValue(app, id, value) {
+  if (id == null) {
+    return;
+  }
+
+  if (app?.extensionManager?.setting?.set) {
+    await app.extensionManager.setting.set(id, value);
+    return;
+  }
+
+  await app?.ui?.settings?.setSettingValue?.(id, value);
 }
 
 export function getLinkConnector(app) {
@@ -53,12 +67,18 @@ export function extractViewport(app) {
 export function extractNodes(app) {
   const graph = getGraph(app);
   const nodes = graph?._nodes ?? [];
+  const slotLinkColors = buildSlotLinkColorMap(app, graph);
 
-  return nodes.map((node) => ({
-    id: node.id,
-    ...getNodeLayout(node),
-    color: resolveNodeColor(node),
-  }));
+  return nodes.map((node) => {
+    const customLayout = getCustomNodeLayout(node);
+    return {
+      id: node.id,
+      ...getNodeLayout(node),
+      color: resolveNodeColor(node),
+      customLayout,
+      slotAnchors: readNodeSlotAnchors(app, node, customLayout, slotLinkColors),
+    };
+  });
 }
 
 export function extractLinks(app) {
@@ -277,6 +297,79 @@ function resolveNodeColor(node) {
   return node?.renderingColor ?? node?.color ?? node?.bgcolor ?? null;
 }
 
+function readNodeSlotAnchors(app, node, customLayout = null, slotLinkColors = new Map()) {
+  const anchors = [];
+  const socketProfile = customLayout?.socketProfile?.slots ?? [];
+
+  for (const [isInput, slots] of [
+    [true, node?.inputs ?? []],
+    [false, node?.outputs ?? []],
+  ]) {
+    for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
+      const slot = slots[slotIndex];
+      const position = getSlotPosition(node, isInput, slotIndex);
+      if (!position) {
+        continue;
+      }
+
+      const profileSlot =
+        socketProfile.find((entry) => entry.isInput === isInput && entry.index === slotIndex) ?? null;
+      const slotKey = createSlotKey(node?.id, isInput, slotIndex);
+      const linkedColor = slotLinkColors.get(slotKey) ?? null;
+      const linked = isInput ? slot?.link != null : Array.isArray(slot?.links) ? slot.links.length > 0 : slot?.link != null;
+
+      anchors.push({
+        x: position.x,
+        y: position.y,
+        isInput,
+        side: profileSlot?.edge ?? null,
+        nearEdge: profileSlot?.nearEdge ?? null,
+        edgeDistance: profileSlot?.edgeDistance ?? null,
+        color: linkedColor ?? resolveSlotActiveColor(app, slot) ?? resolveNodeColor(node),
+        linked,
+      });
+    }
+  }
+
+  return anchors;
+}
+
+function buildSlotLinkColorMap(app, graph) {
+  const slotLinkColors = new Map();
+
+  for (const link of listCollection(graph?.links ?? graph?._links)) {
+    const color = resolveLinkColor(app, link);
+    if (!color) {
+      continue;
+    }
+
+    if (link.origin_id != null && link.origin_slot != null) {
+      slotLinkColors.set(createSlotKey(link.origin_id, false, link.origin_slot), color);
+    }
+
+    if (link.target_id != null && link.target_slot != null) {
+      slotLinkColors.set(createSlotKey(link.target_id, true, link.target_slot), color);
+    }
+  }
+
+  for (const link of listCollection(graph?.floatingLinks)) {
+    const color = resolveLinkColor(app, link);
+    if (!color) {
+      continue;
+    }
+
+    if (link.origin_id != null && link.origin_slot != null) {
+      slotLinkColors.set(createSlotKey(link.origin_id, false, link.origin_slot), color);
+    }
+
+    if (link.target_id != null && link.target_slot != null) {
+      slotLinkColors.set(createSlotKey(link.target_id, true, link.target_slot), color);
+    }
+  }
+
+  return slotLinkColors;
+}
+
 function resolveSlotActiveColor(app, slot) {
   if (!slot) {
     return null;
@@ -342,17 +435,7 @@ function listCollection(collection) {
 }
 
 function getSlotPosition(node, isInput, slotIndex) {
-  if (typeof node?.getConnectionPos === "function") {
-    try {
-      const out = [0, 0];
-      const position = node.getConnectionPos(Boolean(isInput), slotIndex, out) ?? out;
-      return toPoint(position);
-    } catch (error) {
-      return estimateSlotPosition(node, isInput, slotIndex);
-    }
-  }
-
-  return estimateSlotPosition(node, isInput, slotIndex);
+  return resolveNodeSlotPosition(node, isInput, slotIndex);
 }
 
 function estimateSlotPosition(node, isInput, slotIndex = 0) {
@@ -383,4 +466,8 @@ function readSegmentIndex(id) {
   const tail = id.split(":").at(-1);
   const index = Number.parseInt(tail ?? "", 10);
   return Number.isFinite(index) ? index : 0;
+}
+
+function createSlotKey(nodeId, isInput, slotIndex) {
+  return `${nodeId}:${isInput ? "in" : "out"}:${slotIndex}`;
 }

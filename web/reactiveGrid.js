@@ -29,6 +29,7 @@ import {
   getLinkConnector,
   getSettingValue,
   isCanvasInteracting,
+  setSettingValue,
   waitForCanvas,
 } from "./core/comfyAdapter.js";
 import { rgba, screenToWorld, segmentsIntersect } from "./core/geometry.js";
@@ -37,6 +38,10 @@ const EXTENSION_NAME = "FancyGrid.ReactiveBackground";
 const STICKY_REROUTE_STORAGE_KEY = "FancyGridStickyReroutes";
 const CUT_FADE_DURATION_MS = 220;
 const CUT_MIN_DISTANCE = 4;
+const CORE_SETTING_IDS = {
+  snapNodesToGrid: "pysssss.SnapToGrid",
+  snapGridSize: "Comfy.SnapToGrid.GridSize",
+};
 const SETTING_IDS = {
   enabled: "FancyGrid.Enabled",
   gridStyle: "FancyGrid.GridStyle",
@@ -93,6 +98,10 @@ class FancyGridController {
       nodeId: null,
       startedAt: 0,
     };
+    this.coreSettingsPollId = 0;
+    this.syncingCoreGridSize = false;
+    this.lastObservedCoreGridSize = null;
+    this.lastObservedSnapNodesToGrid = null;
   }
 
   async start() {
@@ -104,6 +113,8 @@ class FancyGridController {
     this.installLinkConnectorListeners();
     this.installExecutionListeners();
     this.refreshSettings();
+    this.installCoreSettingsSync();
+    await this.bootstrapCoreSettingsSync();
   }
 
   refreshSettings() {
@@ -128,6 +139,7 @@ class FancyGridController {
         SETTING_IDS.workflowRunStyle,
         DEFAULT_GRID_SETTINGS.workflowRunStyle
       ),
+      snapNodesToGrid: this.readCoreSnapNodesToGrid(),
       spacing: getSettingValue(this.app, SETTING_IDS.spacing, DEFAULT_GRID_SETTINGS.spacing),
       radius: getSettingValue(this.app, SETTING_IDS.radius, DEFAULT_GRID_SETTINGS.radius),
       strength: getSettingValue(this.app, SETTING_IDS.strength, DEFAULT_GRID_SETTINGS.strength),
@@ -212,10 +224,113 @@ class FancyGridController {
       return;
     }
 
-    this.applySettings({
+    const nextSettings = {
       ...this.settings,
       [settingKey]: value,
-    });
+    };
+
+    this.applySettings(nextSettings);
+
+    if (settingId === SETTING_IDS.enabled && nextSettings.enabled) {
+      void this.syncFancySpacingToCore(nextSettings.spacing);
+      void this.syncCoreSettingsFromCanvas(true);
+    } else if (settingId === SETTING_IDS.spacing) {
+      void this.syncFancySpacingToCore(value);
+    }
+  }
+
+  readCoreSnapNodesToGrid() {
+    return Boolean(getSettingValue(this.app, CORE_SETTING_IDS.snapNodesToGrid, DEFAULT_GRID_SETTINGS.snapNodesToGrid));
+  }
+
+  readCoreGridSize() {
+    const numeric = Number(getSettingValue(this.app, CORE_SETTING_IDS.snapGridSize, DEFAULT_GRID_SETTINGS.spacing));
+    return Number.isFinite(numeric) ? numeric : DEFAULT_GRID_SETTINGS.spacing;
+  }
+
+  installCoreSettingsSync() {
+    if (this.coreSettingsPollId) {
+      return;
+    }
+
+    this.coreSettingsPollId = window.setInterval(() => {
+      void this.syncCoreSettingsFromCanvas();
+    }, 200);
+  }
+
+  async bootstrapCoreSettingsSync() {
+    this.lastObservedSnapNodesToGrid = this.readCoreSnapNodesToGrid();
+    this.lastObservedCoreGridSize = this.readCoreGridSize();
+
+    if (this.settings.enabled) {
+      await this.syncFancySpacingToCore(this.settings.spacing);
+    }
+
+    await this.syncCoreSettingsFromCanvas(true);
+  }
+
+  async syncFancySpacingToCore(value = this.settings.spacing) {
+    if (!this.settings.enabled) {
+      return;
+    }
+
+    const nextSpacing = Number(value);
+    if (!Number.isFinite(nextSpacing)) {
+      return;
+    }
+
+    const currentCoreGridSize = this.readCoreGridSize();
+    if (Math.abs(currentCoreGridSize - nextSpacing) < 0.001) {
+      this.lastObservedCoreGridSize = currentCoreGridSize;
+      return;
+    }
+
+    this.syncingCoreGridSize = true;
+    try {
+      await setSettingValue(this.app, CORE_SETTING_IDS.snapGridSize, nextSpacing);
+      this.lastObservedCoreGridSize = nextSpacing;
+    } catch (error) {
+      console.warn("Fancy Grid: failed to sync grid spacing to ComfyUI snap grid size.", error);
+    } finally {
+      this.syncingCoreGridSize = false;
+    }
+  }
+
+  async syncCoreSettingsFromCanvas(force = false) {
+    const nextSnapNodesToGrid = this.readCoreSnapNodesToGrid();
+    const nextCoreGridSize = this.readCoreGridSize();
+    const patch = {};
+
+    if (force || nextSnapNodesToGrid !== this.lastObservedSnapNodesToGrid) {
+      this.lastObservedSnapNodesToGrid = nextSnapNodesToGrid;
+      if (this.settings.snapNodesToGrid !== nextSnapNodesToGrid) {
+        patch.snapNodesToGrid = nextSnapNodesToGrid;
+      }
+    }
+
+    if (force || nextCoreGridSize !== this.lastObservedCoreGridSize) {
+      this.lastObservedCoreGridSize = nextCoreGridSize;
+
+      if (
+        this.settings.enabled &&
+        !this.syncingCoreGridSize &&
+        Math.abs((Number(this.settings.spacing) || 0) - nextCoreGridSize) >= 0.001
+      ) {
+        try {
+          await setSettingValue(this.app, SETTING_IDS.spacing, nextCoreGridSize);
+        } catch (error) {
+          console.warn("Fancy Grid: failed to mirror ComfyUI grid spacing into Fancy Grid.", error);
+          patch.spacing = nextCoreGridSize;
+        }
+      }
+    }
+
+    if (Object.keys(patch).length) {
+      this.applySettings({
+        ...this.settings,
+        ...patch,
+      });
+    }
   }
 
   installCanvasHooks() {
@@ -1075,6 +1190,10 @@ class FancyGridController {
   }
 
   findGridSnapPoint(point, frame = this.lastFrame) {
+    if (!this.settings.snapNodesToGrid) {
+      return null;
+    }
+
     const viewport = extractViewport(this.app);
     if (!viewport) {
       return null;

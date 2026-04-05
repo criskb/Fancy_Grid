@@ -48,15 +48,43 @@ export function getNodeLayout(node) {
 }
 
 export function estimateNodeSlotPosition(node, isInput, slotIndex = 0) {
+  const resolvedIndex = normalizeSlotIndex(slotIndex);
+  const slotPosition = readSlotOffset(node, isInput, resolvedIndex);
+  if (slotPosition) {
+    const { x, y } = getNodeLayout(node);
+    return {
+      x: x + slotPosition.x,
+      y: y + slotPosition.y,
+    };
+  }
+
   const { x, y, width, height } = getNodeLayout(node);
   const slots = isInput ? node?.inputs ?? [] : node?.outputs ?? [];
-  const count = Math.max(slots.length, slotIndex + 1, 1);
+  const count = Math.max(slots.length, resolvedIndex + 1, 1);
   const gap = height / (count + 1);
 
   return {
     x: isInput ? x : x + width,
-    y: y + gap * (slotIndex + 1),
+    y: y + gap * (resolvedIndex + 1),
   };
+}
+
+export function resolveNodeSlotPosition(node, isInput, slotIndex = 0) {
+  const resolvedIndex = normalizeSlotIndex(slotIndex);
+  if (typeof node?.getConnectionPos === "function") {
+    try {
+      const out = [0, 0];
+      const position = node.getConnectionPos(Boolean(isInput), resolvedIndex, out) ?? out;
+      const point = toPoint(position);
+      if (point) {
+        return point;
+      }
+    } catch (error) {
+      // Fall back to slot metadata and estimated layout below.
+    }
+  }
+
+  return estimateNodeSlotPosition(node, isInput, resolvedIndex);
 }
 
 function readBoundingRect(node) {
@@ -71,6 +99,50 @@ function readBoundingRect(node) {
     width: Math.max(0, numberOr(rect[2], 0)),
     height: Math.max(0, numberOr(rect[3], 0)),
   };
+}
+
+function readSlotOffset(node, isInput, slotIndex) {
+  const slot = (isInput ? node?.inputs : node?.outputs)?.[slotIndex];
+  if (!slot) {
+    return null;
+  }
+
+  if (Array.isArray(slot.pos) && slot.pos.length >= 2) {
+    const x = numberOr(slot.pos[0], null);
+    const y = numberOr(slot.pos[1], null);
+    if (x != null && y != null) {
+      return { x, y };
+    }
+  }
+
+  if (Number.isFinite(slot.x) && Number.isFinite(slot.y)) {
+    return { x: slot.x, y: slot.y };
+  }
+
+  return null;
+}
+
+function normalizeSlotIndex(slotIndex) {
+  const numeric = Number.parseInt(String(slotIndex ?? 0), 10);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : 0;
+}
+
+function toPoint(value) {
+  if (Array.isArray(value) && value.length >= 2) {
+    return {
+      x: numberOr(value[0], 0),
+      y: numberOr(value[1], 0),
+    };
+  }
+
+  if (value && Number.isFinite(value.x) && Number.isFinite(value.y)) {
+    return {
+      x: value.x,
+      y: value.y,
+    };
+  }
+
+  return null;
 }
 
 function numberOr(value, fallback) {

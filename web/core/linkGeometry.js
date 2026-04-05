@@ -1,4 +1,4 @@
-import { estimateNodeSlotPosition } from "./nodeGeometry.js";
+import { estimateNodeSlotPosition, getNodeLayout, resolveNodeSlotPosition } from "./nodeGeometry.js";
 
 const LINK_RENDER_MODE = Object.freeze({
   HIDDEN_LINK: -1,
@@ -528,7 +528,7 @@ function resolveLinkEndpoint(graph, link, isInput) {
     return position
       ? {
           ...position,
-          direction: slot?.dir ?? LINK_DIRECTION.LEFT,
+          direction: resolveSlotDirection(node, slot, link.target_slot, position, true),
         }
       : null;
   }
@@ -544,9 +544,59 @@ function resolveLinkEndpoint(graph, link, isInput) {
   return position
     ? {
         ...position,
-        direction: slot?.dir ?? LINK_DIRECTION.RIGHT,
+        direction: resolveSlotDirection(node, slot, link.origin_slot, position, false),
       }
     : null;
+}
+
+function resolveSlotDirection(node, slot, slotIndex, position, isInput) {
+  if (Number.isInteger(slot?.dir) && slot.dir !== LINK_DIRECTION.NONE) {
+    return slot.dir;
+  }
+
+  if (hasCustomSlotPlacement(node, slot, slotIndex, position, isInput)) {
+    return LINK_DIRECTION.CENTER;
+  }
+
+  const inferredDirection = inferDirectionFromNodeEdge(node, position);
+  if (inferredDirection !== LINK_DIRECTION.NONE) {
+    return inferredDirection;
+  }
+
+  return isInput ? LINK_DIRECTION.LEFT : LINK_DIRECTION.RIGHT;
+}
+
+function inferDirectionFromNodeEdge(node, position) {
+  if (!node || !position) {
+    return LINK_DIRECTION.NONE;
+  }
+
+  const layout = getNodeLayout(node);
+  const distances = [
+    { direction: LINK_DIRECTION.LEFT, value: Math.abs(position.x - layout.x) },
+    { direction: LINK_DIRECTION.RIGHT, value: Math.abs(position.x - (layout.x + layout.width)) },
+    { direction: LINK_DIRECTION.UP, value: Math.abs(position.y - layout.y) },
+    { direction: LINK_DIRECTION.DOWN, value: Math.abs(position.y - (layout.y + layout.height)) },
+  ];
+
+  distances.sort((a, b) => a.value - b.value);
+  return distances[0]?.direction ?? LINK_DIRECTION.NONE;
+}
+
+function hasCustomSlotPlacement(node, slot, slotIndex, position, isInput) {
+  if (!node || !position) {
+    return false;
+  }
+
+  if (Array.isArray(slot?.pos) || (Number.isFinite(slot?.x) && Number.isFinite(slot?.y))) {
+    return true;
+  }
+
+  const estimated = estimateNodeSlotPosition(node, isInput, slotIndex);
+  const delta = Math.hypot(position.x - estimated.x, position.y - estimated.y);
+  const layout = getNodeLayout(node);
+  const tolerance = Math.max(10, Math.min(layout.width, layout.height) * 0.12);
+  return delta > tolerance;
 }
 
 function resolveRerouteChain(graph, parentId) {
@@ -582,17 +632,7 @@ function getNodeById(graph, nodeId) {
 }
 
 function getSlotPosition(node, isInput, slotIndex) {
-  if (typeof node?.getConnectionPos === "function") {
-    try {
-      const out = [0, 0];
-      const position = node.getConnectionPos(Boolean(isInput), slotIndex, out) ?? out;
-      return toXY(position);
-    } catch (error) {
-      return estimateSlotPosition(node, isInput, slotIndex);
-    }
-  }
-
-  return estimateSlotPosition(node, isInput, slotIndex);
+  return resolveNodeSlotPosition(node, isInput, slotIndex);
 }
 
 function estimateSlotPosition(node, isInput, slotIndex = 0) {

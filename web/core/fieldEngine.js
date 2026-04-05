@@ -238,12 +238,44 @@ export class ReactiveGridField {
         right: node.x + node.width,
         bottom: node.y + node.height,
       };
+      const radius = node.radius ?? settings.nodeCornerRadius;
+      const slotAnchors = Array.isArray(node.slotAnchors)
+        ? node.slotAnchors
+            .map((anchor) => ({
+              x: anchor.x,
+              y: anchor.y,
+              side: anchor.side ?? null,
+              nearEdge: anchor.nearEdge,
+              edgeDistance: anchor.edgeDistance,
+              isInput: Boolean(anchor.isInput),
+              color: anchor.color ?? null,
+              rgb: parseColorString(anchor.color),
+              linked: Boolean(anchor.linked),
+            }))
+            .filter((anchor) => Number.isFinite(anchor.x) && Number.isFinite(anchor.y))
+        : [];
+      const anchorLanes = buildAnchorLanes(slotAnchors, node, settings);
+      const anchorBounds = computeAnchorBounds(slotAnchors);
+      const laneBounds = computeLaneBounds(anchorLanes);
+      const combinedBounds = {
+        left: Math.min(node.x, anchorBounds?.left ?? node.x, laneBounds?.left ?? node.x),
+        top: Math.min(node.y, anchorBounds?.top ?? node.y, laneBounds?.top ?? node.y),
+        right: Math.max(
+          node.x + node.width,
+          anchorBounds?.right ?? node.x + node.width,
+          laneBounds?.right ?? node.x + node.width
+        ),
+        bottom: Math.max(
+          node.y + node.height,
+          anchorBounds?.bottom ?? node.y + node.height,
+          laneBounds?.bottom ?? node.y + node.height
+        ),
+      };
 
-      if (!boundsIntersect(rectBounds, bounds)) {
+      if (!boundsIntersect(combinedBounds, bounds)) {
         continue;
       }
 
-      const radius = node.radius ?? settings.nodeCornerRadius;
       visible.push({
         id: node.id,
         x: node.x,
@@ -253,12 +285,15 @@ export class ReactiveGridField {
         radius,
         color: node.color ?? null,
         rgb: parseColorString(node.color),
+        customLayout: node.customLayout ?? null,
+        slotAnchors,
+        anchorLanes,
         bounds: rectBounds,
         influenceBounds: {
-          left: node.x - settings.radius - settings.nodePadding,
-          top: node.y - settings.radius - settings.nodePadding,
-          right: node.x + node.width + settings.radius + settings.nodePadding,
-          bottom: node.y + node.height + settings.radius + settings.nodePadding,
+          left: combinedBounds.left - settings.radius - settings.nodePadding,
+          top: combinedBounds.top - settings.radius - settings.nodePadding,
+          right: combinedBounds.right + settings.radius + settings.nodePadding,
+          bottom: combinedBounds.bottom + settings.radius + settings.nodePadding,
         },
         paddedRect: {
           x: node.x - settings.nodePadding,
@@ -386,27 +421,87 @@ export class ReactiveGridField {
         continue;
       }
 
+      for (const anchor of node.slotAnchors ?? []) {
+        const anchorDx = anchor.x - px;
+        const anchorDy = anchor.y - py;
+        const anchorDistance = Math.hypot(anchorDx, anchorDy);
+        const anchorRadius = Math.max(
+          settings.spacing * (node.customLayout?.influenceMode === "anchors-dominant" ? 2.05 : 1.35),
+          settings.nodePadding * 2.8,
+          30
+        );
+        const anchorInfluence =
+          computeFalloff(anchorDistance, anchorRadius, "soft") *
+          (anchor.linked ? 1.15 : 0.86) *
+          (node.customLayout?.influenceMode === "anchors-dominant" ? 1.55 : 1);
+        if (anchorInfluence > 0) {
+          const anchorPullScale = node.customLayout?.influenceMode === "anchors-dominant" ? 0.68 : 0.34;
+          dx += anchorDx * settings.strength * anchorPullScale * anchorInfluence;
+          dy += anchorDy * settings.strength * anchorPullScale * anchorInfluence;
+          nodeVisualInfluence = Math.max(nodeVisualInfluence, anchorInfluence * 0.92);
+          nodeColorInfluence = Math.max(nodeColorInfluence, anchorInfluence);
+
+          const anchorRgb = anchor.rgb;
+          if (anchorRgb) {
+            const colorWeight =
+              anchorInfluence *
+              Math.max(settings.nodeGlow ?? 1, 0.2) *
+              (node.customLayout?.influenceMode === "anchors-dominant" ? 1.35 : 1);
+            nodeColorR += anchorRgb.r * colorWeight;
+            nodeColorG += anchorRgb.g * colorWeight;
+            nodeColorB += anchorRgb.b * colorWeight;
+            nodeColorWeight += colorWeight;
+          }
+        }
+      }
+
+      for (const lane of node.anchorLanes ?? []) {
+        const nearest = nearestPointOnSegment(px, py, lane.x1, lane.y1, lane.x2, lane.y2);
+        const laneInfluence =
+          computeFalloff(nearest.distance, lane.radius, "soft") *
+          lane.weight *
+          (lane.linked ? 1.08 : 0.9);
+
+        if (laneInfluence <= 0) {
+          continue;
+        }
+
+        dx += (nearest.x - px) * settings.strength * lane.pullScale * laneInfluence;
+        dy += (nearest.y - py) * settings.strength * lane.pullScale * laneInfluence;
+        nodeVisualInfluence = Math.max(nodeVisualInfluence, laneInfluence * 0.88);
+        nodeColorInfluence = Math.max(nodeColorInfluence, laneInfluence * 0.94);
+
+        if (lane.rgb) {
+          const laneColorWeight = laneInfluence * lane.colorWeight;
+          nodeColorR += lane.rgb.r * laneColorWeight;
+          nodeColorG += lane.rgb.g * laneColorWeight;
+          nodeColorB += lane.rgb.b * laneColorWeight;
+          nodeColorWeight += laneColorWeight;
+        }
+      }
+
       const nearest = nearestPointOnRoundedRect(px, py, node.paddedRect, node.paddedRadius);
       const localDx = nearest.x - px;
       const localDy = nearest.y - py;
       const distance = Math.hypot(localDx, localDy);
       const influence = computeFalloff(distance, settings.radius, "soft");
       const visualInfluence = computeFalloff(distance, settings.radius, settings.nodeVisualFalloff);
+      const bodyInfluenceScale = resolveBodyInfluenceScale(node);
       // Keep node hue in a tight ring just outside the node edge.
       const localNodeColorInfluence = computeFalloff(
         distance,
         Math.max(settings.nodePadding, settings.spacing * 0.45),
         "edge"
-      );
+      ) * bodyInfluenceScale;
 
       if (influence <= 0) {
         continue;
       }
 
-      dx += localDx * settings.strength * influence;
-      dy += localDy * settings.strength * influence;
-      nodeInfluence = Math.max(nodeInfluence, influence);
-      nodeVisualInfluence = Math.max(nodeVisualInfluence, visualInfluence);
+      dx += localDx * settings.strength * influence * bodyInfluenceScale;
+      dy += localDy * settings.strength * influence * bodyInfluenceScale;
+      nodeInfluence = Math.max(nodeInfluence, influence * bodyInfluenceScale);
+      nodeVisualInfluence = Math.max(nodeVisualInfluence, visualInfluence * bodyInfluenceScale);
       nodeColorInfluence = Math.max(nodeColorInfluence, localNodeColorInfluence);
 
       const nodeRgb = node.rgb;
@@ -557,6 +652,155 @@ export class ReactiveGridField {
       y2: to.y,
     };
   }
+}
+
+function computeAnchorBounds(anchors) {
+  if (!Array.isArray(anchors) || anchors.length === 0) {
+    return null;
+  }
+
+  let left = anchors[0].x;
+  let top = anchors[0].y;
+  let right = anchors[0].x;
+  let bottom = anchors[0].y;
+
+  for (let index = 1; index < anchors.length; index += 1) {
+    const anchor = anchors[index];
+    left = Math.min(left, anchor.x);
+    top = Math.min(top, anchor.y);
+    right = Math.max(right, anchor.x);
+    bottom = Math.max(bottom, anchor.y);
+  }
+
+  return { left, top, right, bottom };
+}
+
+function buildAnchorLanes(anchors, node, settings) {
+  if (!Array.isArray(anchors) || !anchors.length) {
+    return [];
+  }
+
+  const mode = node.customLayout?.influenceMode;
+  if (mode !== "anchors-dominant") {
+    return [];
+  }
+
+  const nodeBounds = {
+    left: node.x,
+    top: node.y,
+    right: node.x + node.width,
+    bottom: node.y + node.height,
+  };
+  const centerX = node.x + node.width * 0.5;
+  const centerY = node.y + node.height * 0.5;
+  const insetX = Math.max(18, node.width * 0.34);
+  const insetY = Math.max(18, node.height * 0.34);
+
+  return anchors.map((anchor) => {
+    const side = anchor.side ?? inferAnchorSide(anchor, nodeBounds);
+    let targetX = centerX;
+    let targetY = centerY;
+    let pullScale = 0.28;
+
+    if (side === "left") {
+      targetX = Math.min(nodeBounds.right, nodeBounds.left + insetX);
+      targetY = clamp(anchor.y, nodeBounds.top + 8, nodeBounds.bottom - 8);
+      pullScale = 0.32;
+    } else if (side === "right") {
+      targetX = Math.max(nodeBounds.left, nodeBounds.right - insetX);
+      targetY = clamp(anchor.y, nodeBounds.top + 8, nodeBounds.bottom - 8);
+      pullScale = 0.32;
+    } else if (side === "top") {
+      targetX = clamp(anchor.x, nodeBounds.left + 8, nodeBounds.right - 8);
+      targetY = Math.min(nodeBounds.bottom, nodeBounds.top + insetY);
+      pullScale = 0.3;
+    } else if (side === "bottom") {
+      targetX = clamp(anchor.x, nodeBounds.left + 8, nodeBounds.right - 8);
+      targetY = Math.max(nodeBounds.top, nodeBounds.bottom - insetY);
+      pullScale = 0.3;
+    }
+
+    const insetBoost = anchor.nearEdge === false ? 1.15 : 1;
+    return {
+      x1: anchor.x,
+      y1: anchor.y,
+      x2: targetX,
+      y2: targetY,
+      radius: Math.max(settings.spacing * 0.95, 20) * insetBoost,
+      weight: (anchor.linked ? 1.25 : 0.95) * insetBoost,
+      pullScale,
+      colorWeight: Math.max(settings.nodeGlow ?? 1, 0.2) * (anchor.linked ? 1.25 : 1.05) * insetBoost,
+      rgb: anchor.rgb ?? null,
+      linked: anchor.linked,
+    };
+  });
+}
+
+function computeLaneBounds(lanes) {
+  if (!Array.isArray(lanes) || lanes.length === 0) {
+    return null;
+  }
+
+  let left = Math.min(lanes[0].x1, lanes[0].x2) - lanes[0].radius;
+  let top = Math.min(lanes[0].y1, lanes[0].y2) - lanes[0].radius;
+  let right = Math.max(lanes[0].x1, lanes[0].x2) + lanes[0].radius;
+  let bottom = Math.max(lanes[0].y1, lanes[0].y2) + lanes[0].radius;
+
+  for (let index = 1; index < lanes.length; index += 1) {
+    const lane = lanes[index];
+    left = Math.min(left, Math.min(lane.x1, lane.x2) - lane.radius);
+    top = Math.min(top, Math.min(lane.y1, lane.y2) - lane.radius);
+    right = Math.max(right, Math.max(lane.x1, lane.x2) + lane.radius);
+    bottom = Math.max(bottom, Math.max(lane.y1, lane.y2) + lane.radius);
+  }
+
+  return { left, top, right, bottom };
+}
+
+function inferAnchorSide(anchor, bounds) {
+  const distances = [
+    { side: "left", value: Math.abs(anchor.x - bounds.left) },
+    { side: "right", value: Math.abs(anchor.x - bounds.right) },
+    { side: "top", value: Math.abs(anchor.y - bounds.top) },
+    { side: "bottom", value: Math.abs(anchor.y - bounds.bottom) },
+  ];
+  distances.sort((a, b) => a.value - b.value);
+  return distances[0]?.side ?? "center";
+}
+
+function resolveBodyInfluenceScale(node) {
+  if (node.customLayout?.influenceMode !== "anchors-dominant") {
+    return 1;
+  }
+
+  const slots = node.customLayout?.socketProfile?.slots ?? [];
+  const sameSideIO = hasSharedSideBetweenInputsAndOutputs(slots);
+  const insetSockets = slots.filter((slot) => slot.nearEdge === false).length;
+
+  if (sameSideIO || insetSockets >= 2) {
+    return 0.08;
+  }
+
+  if (slots.length > 0) {
+    return 0.12;
+  }
+
+  return 0.16;
+}
+
+function hasSharedSideBetweenInputsAndOutputs(slots) {
+  if (!Array.isArray(slots) || !slots.length) {
+    return false;
+  }
+
+  const inputSides = new Set(slots.filter((slot) => slot.isInput).map((slot) => slot.edge));
+  for (const slot of slots) {
+    if (!slot.isInput && inputSides.has(slot.edge)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function createExpandedSegmentBounds(link, radius) {
