@@ -192,6 +192,7 @@ class FancyGridController {
   }
 
   applySettings(nextSettings) {
+    const wasSnapNodesToGrid = this.settings?.snapNodesToGrid;
     this.themeColors = getThemeColors();
     this.settings = mergeSettings(
       DEFAULT_GRID_SETTINGS,
@@ -212,6 +213,10 @@ class FancyGridController {
       this.draggedStickyReroutes.clear();
       this.redrawTargetFps = null;
       this.syncRedrawLoop(false);
+    }
+
+    if (wasSnapNodesToGrid && !this.settings.snapNodesToGrid) {
+      this.snapPreview = null;
     }
 
     this.requestRedraw();
@@ -705,6 +710,10 @@ class FancyGridController {
   }
 
   syncStickyReroutes(frame) {
+    if (!this.settings.snapNodesToGrid) {
+      return;
+    }
+
     const graph = this.app?.canvas?.graph ?? this.app?.graph;
     const registry = this.getStickyRerouteRegistry(graph);
     if (!graph || !registry) {

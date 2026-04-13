@@ -1,4 +1,5 @@
 import { buildLinkSegments, getLinkRenderMode } from "./linkGeometry.js";
+import { formatRgbColor, parseColorString } from "./colorUtils.js";
 import { getCustomNodeLayout } from "./customNodeLayouts.js";
 import { estimateNodeSlotPosition, getNodeLayout, resolveNodeSlotPosition } from "./nodeGeometry.js";
 
@@ -67,7 +68,7 @@ export function extractViewport(app) {
 export function extractNodes(app) {
   const graph = getGraph(app);
   const nodes = graph?._nodes ?? [];
-  const slotLinkColors = buildSlotLinkColorMap(app, graph);
+  const slotLinkSummaries = buildSlotLinkSummaryMap(app, graph);
 
   return nodes.map((node) => {
     const customLayout = getCustomNodeLayout(node);
@@ -76,7 +77,7 @@ export function extractNodes(app) {
       ...getNodeLayout(node),
       color: resolveNodeColor(node),
       customLayout,
-      slotAnchors: readNodeSlotAnchors(app, node, customLayout, slotLinkColors),
+      slotAnchors: readNodeSlotAnchors(app, node, customLayout, slotLinkSummaries),
     };
   });
 }
@@ -297,7 +298,7 @@ function resolveNodeColor(node) {
   return node?.renderingColor ?? node?.color ?? node?.bgcolor ?? null;
 }
 
-function readNodeSlotAnchors(app, node, customLayout = null, slotLinkColors = new Map()) {
+function readNodeSlotAnchors(app, node, customLayout = null, slotLinkSummaries = new Map()) {
   const anchors = [];
   const socketProfile = customLayout?.socketProfile?.slots ?? [];
 
@@ -315,7 +316,8 @@ function readNodeSlotAnchors(app, node, customLayout = null, slotLinkColors = ne
       const profileSlot =
         socketProfile.find((entry) => entry.isInput === isInput && entry.index === slotIndex) ?? null;
       const slotKey = createSlotKey(node?.id, isInput, slotIndex);
-      const linkedColor = slotLinkColors.get(slotKey) ?? null;
+      const linkSummary = slotLinkSummaries.get(slotKey) ?? null;
+      const linkedColor = linkSummary?.color ?? null;
       const linked = isInput ? slot?.link != null : Array.isArray(slot?.links) ? slot.links.length > 0 : slot?.link != null;
 
       anchors.push({
@@ -327,6 +329,7 @@ function readNodeSlotAnchors(app, node, customLayout = null, slotLinkColors = ne
         edgeDistance: profileSlot?.edgeDistance ?? null,
         color: linkedColor ?? resolveSlotActiveColor(app, slot) ?? resolveNodeColor(node),
         linked,
+        linkedCount: linkSummary?.count ?? (linked ? 1 : 0),
       });
     }
   }
@@ -334,8 +337,8 @@ function readNodeSlotAnchors(app, node, customLayout = null, slotLinkColors = ne
   return anchors;
 }
 
-function buildSlotLinkColorMap(app, graph) {
-  const slotLinkColors = new Map();
+function buildSlotLinkSummaryMap(app, graph) {
+  const slotLinkSummaries = new Map();
 
   for (const link of listCollection(graph?.links ?? graph?._links)) {
     const color = resolveLinkColor(app, link);
@@ -344,11 +347,11 @@ function buildSlotLinkColorMap(app, graph) {
     }
 
     if (link.origin_id != null && link.origin_slot != null) {
-      slotLinkColors.set(createSlotKey(link.origin_id, false, link.origin_slot), color);
+      appendSlotLinkColor(slotLinkSummaries, createSlotKey(link.origin_id, false, link.origin_slot), color, 1);
     }
 
     if (link.target_id != null && link.target_slot != null) {
-      slotLinkColors.set(createSlotKey(link.target_id, true, link.target_slot), color);
+      appendSlotLinkColor(slotLinkSummaries, createSlotKey(link.target_id, true, link.target_slot), color, 1);
     }
   }
 
@@ -359,15 +362,16 @@ function buildSlotLinkColorMap(app, graph) {
     }
 
     if (link.origin_id != null && link.origin_slot != null) {
-      slotLinkColors.set(createSlotKey(link.origin_id, false, link.origin_slot), color);
+      appendSlotLinkColor(slotLinkSummaries, createSlotKey(link.origin_id, false, link.origin_slot), color, 0.75);
     }
 
     if (link.target_id != null && link.target_slot != null) {
-      slotLinkColors.set(createSlotKey(link.target_id, true, link.target_slot), color);
+      appendSlotLinkColor(slotLinkSummaries, createSlotKey(link.target_id, true, link.target_slot), color, 0.75);
     }
   }
 
-  return slotLinkColors;
+  finalizeSlotLinkSummaries(slotLinkSummaries);
+  return slotLinkSummaries;
 }
 
 function resolveSlotActiveColor(app, slot) {
@@ -470,4 +474,45 @@ function readSegmentIndex(id) {
 
 function createSlotKey(nodeId, isInput, slotIndex) {
   return `${nodeId}:${isInput ? "in" : "out"}:${slotIndex}`;
+}
+
+function appendSlotLinkColor(store, key, color, weight) {
+  const rgb = parseColorString(color);
+  if (!rgb) {
+    return;
+  }
+
+  const entry = store.get(key) ?? {
+    totalWeight: 0,
+    count: 0,
+    r: 0,
+    g: 0,
+    b: 0,
+    color: null,
+  };
+
+  entry.totalWeight += weight;
+  entry.count += 1;
+  entry.r += rgb.r * weight;
+  entry.g += rgb.g * weight;
+  entry.b += rgb.b * weight;
+  store.set(key, entry);
+}
+
+function finalizeSlotLinkSummaries(store) {
+  for (const [key, entry] of store.entries()) {
+    if (!entry.totalWeight) {
+      store.delete(key);
+      continue;
+    }
+
+    store.set(key, {
+      count: entry.count,
+      color: formatRgbColor({
+        r: entry.r / entry.totalWeight,
+        g: entry.g / entry.totalWeight,
+        b: entry.b / entry.totalWeight,
+      }),
+    });
+  }
 }

@@ -248,6 +248,7 @@ export class ReactiveGridField {
               nearEdge: anchor.nearEdge,
               edgeDistance: anchor.edgeDistance,
               isInput: Boolean(anchor.isInput),
+              linkedCount: Math.max(0, Number(anchor.linkedCount) || 0),
               color: anchor.color ?? null,
               rgb: parseColorString(anchor.color),
               linked: Boolean(anchor.linked),
@@ -432,10 +433,12 @@ export class ReactiveGridField {
         );
         const anchorInfluence =
           computeFalloff(anchorDistance, anchorRadius, "soft") *
-          (anchor.linked ? 1.15 : 0.86) *
+          (anchor.linked ? 1.15 + Math.min(anchor.linkedCount, 3) * 0.08 : 0.86) *
           (node.customLayout?.influenceMode === "anchors-dominant" ? 1.55 : 1);
         if (anchorInfluence > 0) {
-          const anchorPullScale = node.customLayout?.influenceMode === "anchors-dominant" ? 0.68 : 0.34;
+          const anchorPullScale =
+            (node.customLayout?.influenceMode === "anchors-dominant" ? 0.68 : 0.34) *
+            (1 + Math.min(anchor.linkedCount, 4) * 0.05);
           dx += anchorDx * settings.strength * anchorPullScale * anchorInfluence;
           dy += anchorDy * settings.strength * anchorPullScale * anchorInfluence;
           nodeVisualInfluence = Math.max(nodeVisualInfluence, anchorInfluence * 0.92);
@@ -721,15 +724,17 @@ function buildAnchorLanes(anchors, node, settings) {
     }
 
     const insetBoost = anchor.nearEdge === false ? 1.15 : 1;
+    const linkCountBoost = 1 + Math.min(anchor.linkedCount ?? 0, 4) * 0.05;
     return {
       x1: anchor.x,
       y1: anchor.y,
       x2: targetX,
       y2: targetY,
       radius: Math.max(settings.spacing * 0.95, 20) * insetBoost,
-      weight: (anchor.linked ? 1.25 : 0.95) * insetBoost,
-      pullScale,
-      colorWeight: Math.max(settings.nodeGlow ?? 1, 0.2) * (anchor.linked ? 1.25 : 1.05) * insetBoost,
+      weight: (anchor.linked ? 1.25 : 0.95) * insetBoost * linkCountBoost,
+      pullScale: pullScale * linkCountBoost,
+      colorWeight:
+        Math.max(settings.nodeGlow ?? 1, 0.2) * (anchor.linked ? 1.25 : 1.05) * insetBoost * linkCountBoost,
       rgb: anchor.rgb ?? null,
       linked: anchor.linked,
     };
